@@ -8,18 +8,26 @@ exit(0) unless(flock DATA, LOCK_EX|LOCK_NB);
 #sleep(60); 
 
 use strict;
-use lib "./perlmodules/";
+use lib "./perllib";
 use TextpressoSystemTasks;
 use TextpressoGeneralTasks;
 use WormbaseLinkTasks;
+use GetOptions::Long;
 
-# file specs
-if (@ARGV < 2) { 
-    die "USAGE: $0 <input linked HTML file> <linked XML dir>\n".
-	    "eg: $0 ../html/gen110270_fin.html ../linked_xml/\n";
+my ($htmlfile,$linkedxmldir);
+GetOptions ( 'htmlfile=s' => $htmlfile,
+	     'linkedxmldir=s' => $linkedxmldir );
+
+unless ($htmlfile && $linkedxmldir) {
+    die <<USAGE;
+USAGE: $0 --htmlfile <input linked HTML file> --linkedxmldir <linked XML dir>
+
+   eg: $0 ../html/gen110270_fin.html ../linked_xml/
+USAGE
 }
-my $htmlfile = $ARGV[0];
-my $linkedxmldir = $ARGV[1];
+    
+
+my $agent = WormbaseLinkTasks->new();
 
 # log file
 $htmlfile =~ /(\d+)/;
@@ -46,7 +54,12 @@ my $wbpaper_id = WormbaseLinkTasks::getWbPaperId($xmlfilename);
 undef($/); open (IN, "<$xmlfile") or die $!;
 my $linked_xml = <IN>; close (IN); $/ = "\n";
 
-WormbaseLinkTasks::formEntityTableHtml($linked_xml, $wbpaper_id, $entity_table_file, $log_file, "post QC");
+#WormbaseLinkTasks::formEntityTableHtml($linked_xml, $wbpaper_id, $entity_table_file, $log_file, "post QC");
+$agent->form_entity_table({linked_xml   => $linked_xml,
+			   wbpaper_id   => $wbpaper_id,
+			   entity_table => $entity_table_file,
+			   log_file     => $log_file,
+			   stage        => 'post QC'});
 print "Entity table available in $entity_table_file\n";
 
 print "DONE.\n";
