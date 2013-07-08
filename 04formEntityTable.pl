@@ -12,11 +12,14 @@ use lib "./perlmodules/";
 use TextpressoSystemTasks;
 use TextpressoGeneralTasks;
 use WormbaseLinkTasks;
+use lib "../../perlmodules/";
+use GeneralTasks;
+use GeneralGlobals;
 
 # file specs
 if (@ARGV < 2) { 
     die "USAGE: $0 <input linked HTML file> <linked XML dir>\n".
-	    "eg: $0 ../html/gen110270_fin.html ../linked_xml/\n";
+        "eg: $0 ../html/110270.html ../linked_xml/\n";
 }
 my $htmlfile = $ARGV[0];
 my $linkedxmldir = $ARGV[1];
@@ -34,9 +37,10 @@ my @e = split(/\//, $htmlfile);
 my $htmlfilename = pop @e;
 (my $xmlfilename = $htmlfilename) =~ s/\.html/\.XML/i;
 my $xmlfile = $linkedxmldir . "/" . $xmlfilename;
-my @args = ("cp", $htmlfile, $xmlfile);
-system(@args) == 0 or die "died: could not copy $htmlfile to $xmlfile: $!\n";
-print "copied $htmlfile to $xmlfile\n";
+#my @args = ("cp", $htmlfile, $xmlfile);
+#system(@args) == 0 or die "died: could not copy $htmlfile to $xmlfile: $!\n";
+#print "copied $htmlfile to $xmlfile\n";
+GeneralTasks::create_linked_xml_file($htmlfile, $xmlfile);
 
 # (2) form entity table
 print "forming entity table...\n";
@@ -46,7 +50,8 @@ my $wbpaper_id = WormbaseLinkTasks::getWbPaperId($xmlfilename);
 undef($/); open (IN, "<$xmlfile") or die $!;
 my $linked_xml = <IN>; close (IN); $/ = "\n";
 
-WormbaseLinkTasks::formEntityTableHtml($linked_xml, $wbpaper_id, $entity_table_file, $log_file, "post QC");
+my $xml_format = WormbaseLinkTasks::getXmlFormat($xmlfile);
+WormbaseLinkTasks::formEntityTable($linked_xml, $xml_format, $wbpaper_id, $entity_table_file, $log_file, "post QC");
 print "Entity table available in $entity_table_file\n";
 
 print "DONE.\n";
