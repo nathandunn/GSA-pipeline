@@ -5,7 +5,7 @@
 use Fcntl 'LOCK_EX', 'LOCK_NB';
 exit(0) unless(flock DATA, LOCK_EX|LOCK_NB);
 # put your code here instead of sleep
-#sleep(60); 
+#sleep(60);
 
 use strict;
 use lib "./perlmodules/";
@@ -14,9 +14,9 @@ use TextpressoGeneralTasks;
 use WormbaseLinkTasks;
 
 # file specs
-if (@ARGV < 2) { 
+if (@ARGV < 2) {
     die "USAGE: $0 <input linked HTML file> <linked XML dir>\n".
-	    "eg: $0 ../html/gen110270_fin.html ../linked_xml/\n";
+"eg: $0 ../html/gen110270_fin.html ../linked_xml/\n";
 }
 my $htmlfile = $ARGV[0];
 my $linkedxmldir = $ARGV[1];
