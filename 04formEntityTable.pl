@@ -1,5 +1,6 @@
 #!/usr/bin/perl -w
-# Forms the entity table, given a linked XML file
+
+# Generate a table of linked entities for testing.
 
 # make sure only one instance of the script is running at a time
 use Fcntl 'LOCK_EX', 'LOCK_NB';
@@ -12,56 +13,51 @@ use lib "./perllib";
 use TextpressoSystemTasks;
 use TextpressoGeneralTasks;
 use WormbaseLinkTasks;
+use GeneralTasks;
+use GeneralGlobals;
 use GetOptions::Long;
 
-my ($htmlfile,$linkedxmldir);
-GetOptions ( 'htmlfile=s' => $htmlfile,
-	     'linkedxmldir=s' => $linkedxmldir );
+my ($html_filepath,$xml_directory);
+GetOptions ( 'html_filepath=s' => $html_filepath,
+	     'xml_directory=s' => $xml_directory );
 
-unless ($htmlfile && $linkedxmldir) {
+unless ($html_filepath && $xml_directory) {
     die <<USAGE;
-USAGE: $0 --htmlfile <input linked HTML file> --linkedxmldir <linked XML dir>
-
+USAGE: $0 --html_filepath <full path to linked HTML file> --xml_directory <linked XML directory>
    eg: $0 ../html/gen110270_fin.html ../linked_xml/
 USAGE
-}
-    
-
-my $agent = WormbaseLinkTasks->new();
-
-# log file
-$htmlfile =~ /(\d+)/;
-my $file_id = $1;
-my $log_file = "../logs/$file_id";
-if (-e $log_file) {
-    die "log file $log_file already exists. Won't run again!\n";
+;
 }
 
-# (1) copy HTML file to linked XML dir with .XML extn
-my @e = split(/\//, $htmlfile);
-my $htmlfilename = pop @e;
-(my $xmlfilename = $htmlfilename) =~ s/\.html/\.XML/i;
-my $xmlfile = $linkedxmldir . "/" . $xmlfilename;
-my @args = ("cp", $htmlfile, $xmlfile);
-system(@args) == 0 or die "died: could not copy $htmlfile to $xmlfile: $!\n";
-print "copied $htmlfile to $xmlfile\n";
 
-# (2) form entity table
+
+my $agent = WormbaseLinkTasks->new({ stage         => 'post QC',
+				     xml_directory => $xml_directory,
+				     html_filepath => $html_hilepath,
+				   });
+# I don't have this methof
+GeneralTasks::create_linked_xml_file($agent->html_filepath, $agent->xml_path);
+
 print "forming entity table...\n";
-my $entity_table_file = "../entity_link_tables/$htmlfilename";
-my $wbpaper_id = WormbaseLinkTasks::getWbPaperId($xmlfilename);
 
-undef($/); open (IN, "<$xmlfile") or die $!;
+# Could probably create this dynamically
+my $output_file   = "../entity_link_tables/" . $agent->html_filename;
+
+
+# Slurp up linked xml
+undef($/); open (IN, "<" . $agent->xml_filepath) or die $!;
 my $linked_xml = <IN>; close (IN); $/ = "\n";
 
-#WormbaseLinkTasks::formEntityTableHtml($linked_xml, $wbpaper_id, $entity_table_file, $log_file, "post QC");
-$agent->form_entity_table({linked_xml   => $linked_xml,
-			   wbpaper_id   => $wbpaper_id,
-			   entity_table => $entity_table_file,
-			   log_file     => $log_file,
-			   stage        => 'post QC'});
-print "Entity table available in $entity_table_file\n";
+$agent->linked_xml($linked_xml);  # worth storing it?
 
+# I don't know where this method is yet.
+my $xml_format = WormbaseLinkTasks::getXmlFormat($agent->xml_filepath);
+
+
+$agent->form_entity_table({xml_format   => $xml_format,
+			   output_file  => $output_file,
+			  });
+
+
+print "Entity table available in $output_file\n";
 print "DONE.\n";
-
-__DATA__
