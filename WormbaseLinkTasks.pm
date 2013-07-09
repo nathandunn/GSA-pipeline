@@ -1,22 +1,150 @@
 package WormbaseLinkTasks;
 
-use strict;
 use TextpressoGeneralTasks;
 use WormbaseLinkGlobals;
 use GeneralTasks;
 use GeneralGlobals;
+use LWP::Simple;
+use FindBin qw/$Bin/;
+use Moose;
+use CGI qw/:standard/;
 
 require Exporter;
 our @ISA = qw(Exporter);
 our @EXPORT = qw(findAndLinkObjects 
                  getStopWords 
                  loadLexicon 
-                 formEntityTable
-                 getWbPaperId 
+                 
                  getAuthorObjects 
                  getSender 
                  getReceivers
                 );
+# getWbPaperId 
+# formEntityTable
+
+has 'linked_xml' => {
+    is => 'rw',
+}
+
+has 'stage' => {
+    is => 'rw',
+}
+
+# was: linkedxmldir
+has 'xml_directory' => {
+    is => 'rw',    
+}
+
+# xml_file is like gen115485fin_WB.XML
+has 'xml_filename' => {
+    is => 'rw',
+    lazy_build => 1,
+}
+
+sub _build_xml_filename {
+    my $self = shift;
+    my $html_filename = $self->html_filename;
+    (my $xml_filename = $htmlfilename) =~ s/\.html/\.XML/i;
+    return $xml_filename;
+}
+
+has 'xml_filepath' => {
+    is => 'ro',
+    lazy_build => 1,
+}
+
+sub _build_xml_filepath {
+    my $self = shift;
+    return join('/',$self->xml_directory,$xml_filename);
+}
+
+
+
+has 'wormbase_paper_id' => {
+    is => 'rw',
+    lazy_build => 1,
+}
+
+#sub getWbPaperId {
+sub _build_wormbase_paper_id {
+    my $self = shift;
+    my $xml_filename = $self->xml_filename;
+    
+    $xml_filename =~ /(\d+)/;
+    my $genetics_id = $1;
+    
+    my $web_page = "http://tazendra.caltech.edu/~postgres/cgi-bin/journal/journal_all.cgi";
+    my $contents = TextpressoGeneralTasks::getwebpage($web_page);
+    my @lines = split(/\n/, $contents);
+    
+    my $wbpaper_id;
+    for (my $i=0; $i<@lines; $i++) {
+        if ($lines[$i] =~ /\.$genetics_id<\/td>/) {
+            # this line is like 
+            # <td align="center">doi10.1534/genetics.111.128421</td>
+            #
+            # the next line is like 
+            # <td align="center"><a href="http://tazendra.caltech.edu...">00032266</a></td>
+            $lines[$i+1] =~ /\>(\d+)\</;
+            $wbpaper_id = "WBPaper" . $1;
+            last;
+        }
+    }
+    return $wbpaper_id;
+}
+
+has 'html_filename' => {
+    is => 'rw',
+}
+
+has 'html_filepath' => {
+    is => 'rw',
+    lazy_build => 1,   
+}
+
+sub _build_html_filepath {
+    my $self = shift;
+    my $html_filepath = $self->html_filepath;
+    my @e = split(/\//, $html_filepath);
+    my $filename = pop @e;
+    return $filename;
+}    
+
+has 'log_file' => {
+    is => 'rw',
+    lazy_build => 1,
+}
+
+sub _build_log_file {
+    my $self = shift;
+    my $html_filename = $self->html_filename;
+    $html_filename =~ /(\d+)/;
+    my $file_id = $1;
+
+    # really?
+    my $log_file = "$Bin/../logs/$file_id";
+    if (-e $log_file) {
+	die "log file $log_file already exists. Won't run again!\n";
+    }
+    return $log_file;
+}
+
+
+has 'user_agent' => {
+    is => 'rw',
+    lazy_build => 1,
+}
+
+sub _build_user_agent {
+    my $self = shift;
+    my $ua = LWP::UserAgent->new();
+    $ua->agent("GSA Markup Pipeline/1.0");
+    return $ua;
+}
+	       
+
+# ------------------------
+
 
 sub findAndLinkObjects {
     my $xml                = shift;
@@ -814,63 +942,79 @@ sub getPersonIds {
 
 # the sub-routine below is not used now, but will be useful if pattern matching should
 # be used for entity recognition
+# was: formEntityTable
+sub form_entity_table {
+    my ($self,$params) = @_;
 
-sub formEntityTable {
-    my $linked_xml = shift;
-    my $xml_format = shift;
-    my $wbpaper_id = shift;
-    my $outfile = shift;
-    my $log_file = shift;
-    my $pipeline_stage = shift; # "first pass" or "post QC"
+    my $linked_xml = $self->linked_xml;
+    my $wbpaper_id = $self->wormbase_paper_id;
+    my $log_file   = $self->log_file;
+    my $stage      = $self->stage;
 
-    #undef($/); open (IN, "<$linked_xml_file") or die $!;
-    #my $linked_xml = <IN>; close (IN); $/ = "\n";
+    # This must be supplied.
+    my $xml_format = $params->{xml_format};
+    my $outfile    = $params->{output_file};
 
     # get different docId's for the article
-    my $doi = GeneralTasks::getDoi($linked_xml, $xml_format);
+    # I don't have these methods yet
+    my $doi         = GeneralTasks::getDoi($linked_xml, $xml_format);
     my $genetics_id = GeneralTasks::getGeneticsId($linked_xml, $xml_format);
-
-    open (OUT, ">$outfile") or die ("Could not open $outfile for writing: $!");
-    print OUT "<HTML>\n";
-    print OUT "<HEAD>\n";
-
-    if ($pipeline_stage eq "first pass") {
-        print OUT "<TITLE>First pass entity table for $wbpaper_id</TITLE>\n";
-        print OUT "</HEAD>\n";
-        print OUT "<BODY BGCOLOR=\"Silver\">\n";
-        print OUT "<H1><font color=\"red\">This is the first pass entity table.</font></H1>\n";
-    } else {
-        print OUT "<TITLE>Entity table for $wbpaper_id</TITLE>\n";
-        print OUT "</HEAD>\n";
-        print OUT "<BODY BGCOLOR=\"#AABBCC\">\n";
-    }
-
-    print OUT "<H2> Genetics DOI: $doi</H2>\n";
-    print OUT "<H2> WB Paper ID : $wbpaper_id</H2>\n";
-    #print OUT "<H2> Genetics ID : $genetics_id</H2>\n";
-
-    print OUT "<H3> Title : ",   GeneralTasks::getArticleTitle($linked_xml, $xml_format), " </H3>\n";
-    print OUT "<H3> Authors : ", GeneralTasks::getAuthors($linked_xml, $xml_format),      " </H3>\n";
-
-    print OUT "<p> <B>Note </B>:<br/>" . 
-              "The links that are flagged 'live' have a current and valid WormBase page. <br/>" . 
-              "The links that are flagged as <font color=\"red\">silent</font> are new entities and are not currently live, ".
-              "but have been forwarded to an appropriate WormBase curator. They will become live soon. <br/>" .
-              "The links that are flagged as <font color=\"magenta\">read timeout</font> are the ones for which ".
-              "WormBase did not return anything within 60 secs at the time the script checked the link. " .
-              "Most likely these links are live, so please click on the link manually and verify. <br/>" .
-              "If you have any questions or find any errors please contact Karen Yook at kyook\@caltech.edu </p>";
     
-    print OUT "<TABLE BORDER=1>\n";
-    print OUT "<TR> <TD><B>Entity class</B></TD> <TD><B>Entity name</B></TD> <TD><B>link</B></TD> <TD><B>link status</B></TD> ".
-              " <TD><B>Relevant content from URL</B></TD> <TD><B># of linked occurrences</B></TD> </TR>\n";
+    open (OUT, ">$outfile") or die ("Could not open $outfile for writing: $!");
+   
+    my ($title,$bgcolor,$msg);
+    if ($stage eq "first pass") {
+	$title = "First pass entity table for $wbpaper_id";
+	$bgcolor = "Silver";
+	$msg = "This is the first pass entity table.";
+    } else {
+	$title = "Entity table for $wbpaper_id";
+	$bgcolor = '#AABBCC';
+    }
+    print OUT 
+	header(),
+	start_html(-title   => $title,
+		   -bgcolor => $bgcolor);   
+    print OUT
+	h1($msg),
+	h2("Genetics DOI: $doi"),
+	h2("WB Paper ID : $wbpaper_id"),
+	h3("Title : " . GeneralTasks::getArticleTitle($linked_xml, $xml_format)),
+	h3("Authors : " . GeneralTasks::getAuthors($linked_xml, $xml_format));
+
+    print OUT 
+	p(
+	    b("Note")
+	    ":<br/>"
+	    . 
+	    "The links that are flagged 'live' have a current and valid WormBase page. <br/>" . 
+	    "The links that are flagged as <font color=\"red\">silent</font> are new entities and are not currently live, ".
+	    "but have been forwarded to an appropriate WormBase curator. They will become live soon. <br/>" .
+	    "The links that are flagged as <font color=\"magenta\">read timeout</font> are the ones for which ".
+	    "WormBase did not return anything within 60 secs at the time the script checked the link. " .
+	    "Most likely these links are live, so please click on the link manually and verify. <br/>" .
+	    "If you have any questions or find any errors please contact Karen Yook at kyook\@caltech.edu </p>");
+    
+    print OUT start_table({-border=>1});
+    print OUT
+	TR(
+	    th('Entity class'),
+	    th('Entity name'),
+	    th('link'),
+	    th('response code'),
+	    th('response status'),	    
+	    th('relevant content from URL'),
+	    th('# of linked occurrences'));
+
+
+    # Cleaned up to about here.
 
     my %entity_url_hash = ();
     my $total_num_links = 0;
     while ($linked_xml =~ m{<a href="(http://www\.wormbase\.org/.+?)"( id=".+?")?>(.+?)</a>}g) {
         my $url = $1;
         my $entity_name = $3;
-
+	
         if (not defined($entity_url_hash{$entity_name}{$url})) {
             $entity_url_hash{$entity_name}{$url} = 1;
         } else {
@@ -878,47 +1022,51 @@ sub formEntityTable {
         }
         $total_num_links++;
     }
-
+    
     # append to log file just to check if the script is run multiple times for any genetics paper
     open(LOG, ">>$log_file") or die("could not open log file $log_file for writing: $!\n"); 
     # print start time to log file
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
     printf LOG "Begin time = %4d-%02d-%02d %02d:%02d:%02d\n\n",$year+1900,$mon+1,$mday,$hour,$min,$sec;
-
+    
     my %hash = ();
     for my $entity (sort keys %entity_url_hash) {
         for my $link (sort {lc($a) cmp lc($b)} keys %{$entity_url_hash{$entity}}) {
-            my $class = getEntityClass($link);
+            my $class = $self->get_entity_class_from_link($link);
             #my $link_status = isLivePage( $link );
-    
+	    
             # log
             print LOG "$entity\t$class\t$link\n";
             ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
             printf LOG "%4d-%02d-%02d %02d:%02d:%02d\n",$year+1900,$mon+1,$mday,$hour,$min,$sec;
-            my $contents = get_web_page($link); # link is to wormbase, so use get_web_page
-            #print "$contents\n";
 
-            if ( ($contents =~ /has no record for/i) || # For missing Person, WormBase page says "has no record for Lisa L. Maduzia".
-                 ($contents =~ /No results found/i)  || # missing objects for other classes 
-                 ($contents =~ /not found in the database/i)  
-               ) { 
-                $hash{$class}{$entity}{"silent"} = $link;
-                print "Entity: $entity\tClass: $class\tStatus: silent\n\n";
-                print LOG "Status: silent\n";
-            } 
-            elsif ( $contents =~ /500 read timeout/i) {  
-            # trouble with wormbase; either wormbase is down or wormbase not allowing requests from textpresso-dev
-                $hash{$class}{$entity}{"read timeout"} = $link;
-                print "Entity: $entity\tClass: $class\tStatus:timeout\n";
-                print LOG "Status: 500 read timeout\n";
-            } 
-            else { # live
+	    my $response      = $ua->get($link);
+	    my $response_code = $response->status_line;
+	    my $content       = $response->decoded_content;	    
+
+	    my $request_status;
+            if (
+		($contents =~ /has no record for/i)
+		|| # For missing Person, WormBase page says "has no record for Lisa L. Maduzia".
+		($contents =~ /No results found/i)
+		|| # missing objects for other classes 
+		($contents =~ /not found in the database/i)  
+		) { 
+		$request_status = 'silent';
+            } elsif ( $response_code =~ /^5\d\d/) { # Various 5xx		
+		$request_status = 'server error';
+	    } elsif ( $response_code =~ /404/) {
+		$request_status = 'not_found';
+            } else { # live
                 # extract some content from the downloaded page for display on the entity table
-
+		
+		# It would be better to send direct requests to the API
+		# instead of screen scraping.
+		
                 # put the entire content in one line for easy pattern matching below
                 my @lines = split(/\n/, $contents);
                 $contents = join(" ", @lines);
-
+		
                 # get the title
                 $contents =~ /<title>(.+?)<\/title>/i;
                 my $title = $1;
@@ -929,85 +1077,108 @@ sub formEntityTable {
                 if ($class eq "Variation") {
                     $contents =~ /<th.+?>\s*Corresponding\s+gene:.+?<a.+?>(.+?)<\/a>/i;
                     my $gene = $1;
-
+		    
                     # remove the unwanted WBgeneID
                     $gene =~ s/\(WBGene.+?\)//g;
                     $gene =~ s/\s+$//;
-
+		    
                     $hash{$class}{$entity}{"<B>Title</B>: '$title' <BR/> <B>Corresponding gene</B>: '$gene'"} = $link;
-                } 
-                elsif ($class eq "Phenotype") {
+                } elsif ($class eq "Phenotype") {
                     $contents =~ /<th.+?>\s*Primary\s+name:.+?<a.+?>(.+?)<\/a>/i;
                     my $primary_name = $1;
 
                     $hash{$class}{$entity}{"<B>Title</B>: '$title' <BR/> <B>Primary name</B>: '$primary_name'"} = $link;
-                } 
-                elsif ($class eq "GO") {
+                } elsif ($class eq "GO") {
                     $contents =~ m#<th.+?>\s*Term:.*?<td.*?>(.+?)</td>#i;
                     my $GO_term = $1;
                     print "GO_term = $GO_term\n";
-
+		    
                     if ($title eq 'Gene Ontology Search') {
                         $hash{$class}{$entity}{"<font color=\"grey\"><B>Title</B>: '$title' <BR/> <B>Term</B>: '$GO_term'<\/font>"} = $link;
-                    }
-                    else {
+                    } else {
                         $hash{$class}{$entity}{"<B>Title</B>: '$title' <BR/> <B>Term</B>: '$GO_term'"} = $link;
                     }
-                } 
-                else {
+                } else {
                     $hash{$class}{$entity}{"<B>Title</B>: '$title'"} = $link;
                 }
-
-                print "Entity: $entity\tClass: $class\tStatus: live\n\n";
-                print LOG "Status: live\n";
+		$request_status = 'live';
             }
+	    
+	    $hash{$class}{$entity}{$request_status} = $link;
+	    $hash{$class}{$entity}{response_code} = $response_code;
+	    print "Entity: $entity\tClass: $class\tStatus: $request_status\n\n";
+	    print LOG "Status: $request_status\n";
             
             ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
             printf LOG "%4d-%02d-%02d %02d:%02d:%02d\n\n",$year+1900,$mon+1,$mday,$hour,$min,$sec;
         }
     }
+
+#1. The table had sortable columns
+#2. The table had a column for response status
+#3. rows with errors were hilighted
+#4 there was some logic that tested the page title against the desired link (or maybe made a request for a widget from the page instead of the page itself)
+#you could request, say, the overview widget which should exist on every page.
+#If that's succesful, the full page link will also work.
+#and you could parse some of the data to see if it matches the requested object in the url
+
     # print end time to log file
     ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
     printf LOG "End time: %4d-%02d-%02d %02d:%02d:%02d\n\n",$year+1900,$mon+1,$mday,$hour,$min,$sec;
     close(LOG);
-
+    
     for my $class (sort keys %hash) {
         for my $entity (sort {lc($a) cmp lc($b)} keys %{$hash{$class}}) {
             for my $status (keys %{$hash{$class}{$entity}}) {
                 my $link = $hash{$class}{$entity}{$status};
-
-                my $link_display = "<a href=\"$link\">$link</a>";
-
-                my $class_display = $class;
+                my $response_code = $hash{$class}{$entity}{response_code};
+		
+		my $class_display = $class;
                 $class_display = "Gene/Protein" if ($class eq "Gene"); 
 
                 my $num_occurrences = $entity_url_hash{$entity}{$link};
                 
-                if ($status eq "silent") {
-                    print OUT "<TR> <TD>$class_display</TD> <TD><B>$entity</B></TD> <TD>$link_display</TD> ." .
-                                "<TD><font color=\"red\">$status</font></TD> <TD>''</TD> <TD>$num_occurrences</TD> </TR>\n";
-                } elsif ($status eq "read timeout") {
-                    print OUT "<TR> <TD>$class_display</TD> <TD><B>$entity</B></TD> <TD>$link_display</TD> ." .
-                                "<TD><font color=\"magenta\">$status</font></TD> <TD>''</TD> <TD>$num_occurrences</TD> </TR>\n";
+		my $status_class;
+                if ($status eq 'silent') {
+		    $status_class = 'silent';  # red
+                } elsif ($status eq "timeout") {
+		    $status_class = 'timeout';  # magenta
+                } elsif ($status eq "server error") {
+		    $status_class = 'server-error';  # magenta
                 } else { # the status itself has some content downloaded from the URL
-                    print OUT "<TR> <TD>$class_display</TD> <TD><B>$entity</B></TD> <TD>$link_display</TD> ." .
-                            "<TD><font color=\"black\">live</font></TD> <TD>$status</TD> <TD>$num_occurrences</TD> </TR>\n";
+		    $status_class = 'live';
                 }
+		
+		print OUT 
+		    TR(
+			td($class_display),
+			td($entity),
+			td(a({-href=>$link},$link)),
+			td($response_code),
+			td(span({-class=>$status_class},$status)),
+			td($num_occurrences));
             }
         }
     }
-    print OUT "<TR> <TD></TD> <TD></TD> <TD></TD> <TD></TD> <TD><B>TOTAL</B></TD> <TD><B>$total_num_links</B></TD> </TR>\n";
-    print OUT "</TABLE>\n";
-    print OUT "</BODY>\n";
-    print OUT "</HTML>\n";
+    print OUT
+	TR(
+	    td({-colspan=>6},b('TOTAL')),
+	    td(b($total_num_links)));
+    print end_table();
+    print end_html();
     close OUT;
 }
 
-sub getEntityClass {
-    my $link = shift;
-
-    if ( ($link =~ /(Gene)/) || ($link =~ /(Strain)/) || ($link =~ /(Clone)/) || ($link =~ /(Transgene)/) ||
-         ($link =~ /(Rearrangement)/) || ($link =~ /(Sequence)/) || ($link =~ /(Phenotype)/) ) {
+sub get_entity_class_from_link {
+    my ($self,$link) = @_;
+    
+    if ( ($link =~ /(Gene)/) 
+	 || ($link =~ /(Strain)/)
+	 || ($link =~ /(Clone)/) 
+	 || ($link =~ /(Transgene)/) 
+	 || ($link =~ /(Rearrangement)/) 
+	 || ($link =~ /(Sequence)/)
+	 || ($link =~ /(Phenotype)/) ) {
         return $1;
     } elsif ($link =~ /Variation/i) {
         return "Variation";
@@ -1017,36 +1188,11 @@ sub getEntityClass {
         return "Person";
     } elsif ($link =~ /GO_term/i) {
         return "GO";
-    }
-
+    }    
     die "died: The link $link does not have a valid entity class\n";
 }
 
-sub getWbPaperId {
-    my $filename = shift; # filename is like gen115485fin_WB.XML
-    $filename =~ /(\d+)/;
-    my $genetics_id = $1;
-    
-    my $web_page = "http://tazendra.caltech.edu/~postgres/cgi-bin/journal/journal_all.cgi";
-    my $contents = TextpressoGeneralTasks::getwebpage($web_page);
-    my @lines = split(/\n/, $contents);
 
-    my $wbpaper_id;
-    for (my $i=0; $i<@lines; $i++) {
-        if ($lines[$i] =~ /\.$genetics_id<\/td>/) {
-            # this line is like 
-            # <td align="center">doi10.1534/genetics.111.128421</td>
-            #
-            # the next line is like 
-            # <td align="center"><a href="http://tazendra.caltech.edu...">00032266</a></td>
-            $lines[$i+1] =~ /\>(\d+)\</;
-            $wbpaper_id = "WBPaper" . $1;
-            last;
-        }
-    }
-
-    return $wbpaper_id;
-}
 
 sub getAuthorObjects {
     my $contents = shift;
