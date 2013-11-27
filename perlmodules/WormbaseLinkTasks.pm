@@ -1,23 +1,17 @@
 package WormbaseLinkTasks;
 
 use Moose;
+use FindBin qw/$Bin/;
+use LWP::UserAgent;
+use CGI qw/:standard *table/;
+use File::Slurp;
+use JSON qw/decode_json/;
+use Data::Dumper;
 use TextpressoGeneralTasks;
 use WormbaseLinkGlobals;
 use GeneralTasks;
 use GeneralGlobals;
-use FindBin qw/$Bin/;
-use LWP::UserAgent;
-use CGI qw/:standard *table/;
-
-#require Exporter;
-#our @ISA = qw(Exporter);
-#our @EXPORT = qw(findAndLinkObjects 
-#                 getStopWords 
-#                 loadLexicon 
-#                 getAuthorObjects 
-#                 getSender 
-#                 getReceivers
-#                );
+use Specs;
 
 has 'linked_xml' => (
     is => 'rw',    
@@ -41,8 +35,6 @@ sub _build_output {
     return "$this/$date";
 }
 
-
-# was: linkedxmldir
 has 'reports_directory' => (
     is => 'rw',    
     lazy_build => 1,
@@ -50,8 +42,8 @@ has 'reports_directory' => (
 
 sub _build_reports_directory {
     my $self = shift;
-    my $path = $self->output . "/entity_reports";
-    mkdir($path,0775) or die "Couldn't mkdir $path";
+    my $path = "$Bin/../entity_reports";
+    mkdir($path,0775) or warn "Couldn't mkdir $path: $!";
     return $path;
 }
 
@@ -68,12 +60,16 @@ sub _build_xml_directory {
     return $path;
 }
 
+=pod
+
 # xml_file is like gen115485fin_WB.XML
 has 'xml_filename' => (
     is => 'rw',
     lazy_build => 1,
     );
 
+# We may need to construct an suitable XML file
+# if we are provided with an HTML file.
 sub _build_xml_filename {
     my $self = shift;
     my $html_filename = $self->html_filename;
@@ -81,15 +77,31 @@ sub _build_xml_filename {
     return $xml_filename;
 }
 
-has 'xml_filepath' => (
-    is => 'ro',
-    lazy_build => 1,
-    );
+=cut
 
-sub _build_xml_filepath {
-    my $self = shift;
-    return join('/',$self->xml_directory,$self->xml_filename);
-}
+# We may wish to pass IN an xml file name.
+#has 'xml_filepath' => (
+#    is => 'rw',
+#    lazy_build => 1,
+#    );
+#
+#sub _build_xml_filepath {
+#    my $self = shift;
+#    return join('/',$self->xml_directory,$self->xml_filename);
+#}
+
+#has 'gsa_id' => (
+#    is => 'rw',
+#    lazy_build => 1,
+#    );
+#
+#sub _build_gsa_id {
+#    my $self = shift;
+#    my $filename = $self->xml_filename;
+#    $filename =~ /(\d+)/; # this will be the GSA ID
+#    my $id = $1;
+#    return $id;
+#}
 
 has 'linked_xml' => (
     is         => 'rw',
@@ -99,7 +111,8 @@ has 'linked_xml' => (
 sub _build_linked_xml {    
     my $self = shift;    
     # Slurp up linked xml. Odd.
-    undef($/); open (IN, "<" . $self->xml_filepath) or die $!;
+#    undef($/); open (IN, "<" . $self->xml_filepath) or die $!;
+    undef($/); open (IN, "<" . $self->input_file) or die $!;
     my $linked_xml = <IN>; close (IN); $/ = "\n";
     return $linked_xml;
 }
@@ -109,16 +122,17 @@ has 'wormbase_paper_id' => (
     lazy_build => 1,
     );
 
-#sub getWbPaperId {
 sub _build_wormbase_paper_id {
     my $self = shift;
-    my $xml_filename = $self->xml_filename;
-    
-    $xml_filename =~ /(\d+)/;
-    my $genetics_id = $1;
+#    my $xml_filename = $self->xml_filename;
+#    
+#    $xml_filename =~ /(\d+)/;
+#    my $genetics_id = $1;
+
+    my $genetics_id = $self->filename_base;
 
     # This page is protected.
-    my $web_page = "http://tazendra.caltech.edu/~postgres/cgi-bin/journal/journal_all.cgi";
+    my $web_page = "http://tazendra.caltech.edu/~postgres/cgi-bin/author_fp_display.cgi?afp_jfp=jfp";
     my $contents = TextpressoGeneralTasks::getwebpage($web_page);
     my @lines = split(/\n/, $contents);
     
@@ -135,26 +149,68 @@ sub _build_wormbase_paper_id {
             last;
         }
     }
-    return 'unknown id- no access to tazendra';
+    return 'unknown id-no access to tazendra';
     return $wbpaper_id;
 }
 
-has 'html_filename' => (
+
+has 'input_file' => (
     is => 'rw',
-    lazy_build => 1,   
+    lazy_build => 1,
     );
 
-sub _build_html_filename {
+has 'input_dir' => (
+    is => 'rw',
+    lazy_build => 1,
+    );
+
+has 'filename_base' => (
+    is => 'rw',
+    lazy_build => 1,
+    );
+
+sub _build_filename_base {
     my $self = shift;
-    my $html_filepath = $self->html_filepath;
-    my @e = split(/\//, $html_filepath);
+    my $file = $self->input_file;
+    
+    # Get the filename from the full path.
+    my @e = split(/\//, $file);
     my $filename = pop @e;
-    return $filename;
-}    
+    
+    # Get the base identifier.
+    $filename =~ /(\d+)/;
+    my $file_id = $1;
+    return $file_id; 
+}
+
+#has 'html_filename' => (
+#    is => 'rw',
+#    lazy_build => 1,   
+#    );
+#
+#sub _build_html_filename {
+#    my $self = shift;
+#    my $html_filepath = $self->html_filepath;
+#    my @e = split(/\//, $html_filepath);
+#    my $filename = pop @e;
+#    return $filename;
+#}    
+#
+
+=pod
 
 has 'html_filepath' => (
     is => 'rw',
+    lazy_build => 1,
     );
+
+sub _build_html_filepath {
+    my $self = shift;
+    my $path = "$Bin/../html";
+    return $path;
+}
+
+=cut
 
 has 'log_file' => (
     is => 'rw',
@@ -163,12 +219,14 @@ has 'log_file' => (
 
 sub _build_log_file {
     my $self = shift;
-    my $html_filename = $self->html_filename;
-    $html_filename =~ /(\d+)/;
-    my $file_id = $1;
+#    my $html_filename = $self->html_filename;
+#    $html_filename =~ /(\d+)/;
+#    my $file_id = $1;
+#    my $file_id = $self->filename_base;
     
-    # really?
-    my $log_file = $self->output . "/$file_id.log";
+    # really?  This doesn't take into account
+    # first pass (03) or other steps.
+    my $log_file = $self->output . "/" . $self->filename_base . '.log';
     if (-e $log_file) {
 	die "log file $log_file already exists. Won't run again!\n";
     }
@@ -189,100 +247,165 @@ sub _build_my_user_agent {
 }
 
 
+has 'email_sender' => (
+    is => 'ro',
+    lazy_build => 1,
+    );
+
+sub _build_email_sender {
+    my $self = shift;    
+    my $emails = read_file(Specs::EMAIL_DIR . '/developers.txt');
+    return $emails;
+}
+
+has 'email_receivers' => (
+    is => 'ro',
+    lazy_build => 1,
+    );
+
+sub _build_email_receivers {
+    my $self = shift;
+    my @emails = read_file(Specs::EMAIL_DIR . '/curators.txt');
+
+    # keep the sender apprised of all emails.
+    push @emails,$self->email_sender;
+    return @emails;
+}
+
+
+has 'email_final_receivers' => (
+    is => 'ro',
+    lazy_build => 1,
+    );
+
+sub _build_email_final_receivers {
+    my $self = shift;
+    my @emails = read_file(Specs::EMAIL_DIR . '/final.txt');
+
+    # keep the sender apprised of all emails.
+    push @emails,$self->email_sender;
+    return @emails;
+}
+
+
+
+
 # ------------------------
 
 
 sub findAndLinkObjects {
+    my $self               = shift;
     my $xml                = shift;
     my $tok_txt            = shift;
-    my $lexicon_ref        = shift;
-    my $sorted_entries_ref = shift;
-    my $wbpaper_id         = shift;
     my $xml_format         = shift;
-    my $gsa_id             = shift;
-    
-    print "Linking begins now...\n";
+
+    my ($lexicon,$sorted_entries) = $self->loadLexicon;
+    my $wbpaper_id                = $self->wormbase_paper_id; 
+#    my $gsa_id                    = $self->gsa_id;
+    my $gsa_id = $self->filename_base;
+   
+    print "Linking objects in $gsa_id...\n";
     
     my $linked_xml = $xml;
     
     # hash used for avoiding sub-string matches
     my %orig = (); # key: hidden name, value: entity
     
-    for my $entity_name (@$sorted_entries_ref) {
+    for my $entity_name (@$sorted_entries) {
 	
         # matching happens in $tok_txt; links added to $linked_xml
         if ($tok_txt =~ /\Q$entity_name\E/) { 
 	    
-            my $class = get_entity_class( keys %{$lexicon_ref->{$entity_name}} );
+            my $class = get_entity_class( keys %{$lexicon->{$entity_name}} );
 	    
             # generic URL; is changed for special cases below.
             my $url = "http://www.wormbase.org/db/get?name=$entity_name;class=$class";
-	    
-            # skip what won't be linked
-            if ( $class eq "Gene" || $class eq "Protein" ) {
-                next if ($linked_xml !~ /\b(\Q$entity_name\E)(p?)\b/);
-            }
-            else {
-                next if ($linked_xml !~ /\b\Q$entity_name\E\b/);
-            }
-            
-            print "$class \'$entity_name\'\n"; 
-	    
-            if ( $class eq "Gene" || $class eq "Protein" ) {
-                $url = "http://www.wormbase.org/db/get?name=$entity_name;class=Gene";
+
+            if (
+                ($linked_xml !~ m{(<I>)( ?)(\Q$entity_name\E)( |,)?(</I>-test)}) or 
+                ($linked_xml !~ m{(<I>)( ?)(\Q$entity_name\E)( |,)?(</I>\stest)}) or 
+                ($linked_xml !~ m{ ([\=]\s*<I>)( ?)(\Q$entity_name\E)( |,)?(</I>)}) or 
+                ($linked_xml !~ m{ (<I>)( ?)(\Q$entity_name\E)( |,)?(</I>\s*[\=])}) or 
+                ($linked_xml !~ m{(<italic>)( ?)(\Q$entity_name\E)( |,)?(</italic>-test)}) or 
+                ($linked_xml !~ m{(<italic>)( ?)(\Q$entity_name\E)( |,)?(</italic>\stest)}) or 
+                ($linked_xml !~ m{ ([\=]\s*<italic>)( ?)(\Q$entity_name\E)( |,)?(</italic>)}) or 
+                ($linked_xml !~ m{ (<italic>)( ?)(\Q$entity_name\E)( |,)?(</italic>\s*[\=])})  
+		){                        
 		
-                # hide matched entity to avoid future sub-string matches
-                # Hidden entities are replaced with originals once matching is done.
-                $linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
-		
-                # if there is a 'p' after gene name, link it to the gene
-                $entity_name .= 'p';
-                $linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
-            } 
-            
-            elsif (    $class eq "Strain"
-		       || $class eq "Clone"
-		       || $class eq "Transgene"
-		       || $class eq "Rearrangement"
-		       || $class eq "Sequence"
+		if  (
+		    ($linked_xml !~ m{ (::<italic>)( ?)(\Q$entity_name\E)( |,)?(</italic>)}) or
+		    ($linked_xml !~ m{ (<italic>)( ?)(\Q$entity_name\E)( |,)?(</italic>::)}) or 
+		    ($linked_xml !~ m{ (::<I>)( ?)(\Q$entity_name\E)( |,)?(</I>)}) or
+		    ($linked_xml !~ m{ (<I>)( ?)(\Q$entity_name\E)( |,)?(</I>::)})  
+		    )  {
+		    
+		    # skip what won't be linked
+		    if ( $class eq "Gene" || $class eq "Protein" ) {
+			next if ($linked_xml !~ /\b(\Q$entity_name\E)(p?)\b/);
+		    }
+		    else {
+			next if ($linked_xml !~ /\b\Q$entity_name\E\b/);
+		    }
+		    
+		    print "$class \'$entity_name\'\n"; 
+		    
+		    if ( $class eq "Gene" || $class eq "Protein" ) {
+			$url = "http://www.wormbase.org/db/get?name=$entity_name;class=Gene";
+			
+			# hide matched entity to avoid future sub-string matches
+			# Hidden entities are replaced with originals once matching is done.
+			$linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
+			
+			# if there is a 'p' after gene name, link it to the gene
+#                $entity_name .= 'p';
+#                $linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
+		    } 
+		    
+		    elsif (    $class eq "Strain"
+			       || $class eq "Clone"
+			       || $class eq "Transgene"
+			       || $class eq "Rearrangement"
+			       || $class eq "Sequence"
 #                    || $class eq "Anatomy_term"
 #                    || $class eq "Anatomy_name"
-		) {
-                $linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
-            }
-            
-            elsif ($class eq "Variation") {
-                my $allele_root = removeAlleleSuffix($entity_name);
-                $url = "http://www.wormbase.org/db/get?name=$allele_root;class=$class";
-                $linked_xml = link_variation_in_xml($linked_xml, $entity_name, $allele_root, $url, \%orig);
-            }
-            
-            elsif ($class eq "Phenotype") {
-                my $phenotype_id = $lexicon_ref->{$entity_name}{$class}; 
-                $url = "http://www.wormbase.org/db/get?name=$phenotype_id;class=$class";
-                $linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
-            }
-        }
-	
-        # special case for Variation. entries like snp_2L52[1]
-        elsif ($entity_name =~ /^snp_/) {
-            if ($tok_txt =~ /($entity_name)/i) {
-                for my $class (keys %{$lexicon_ref->{$entity_name}}) { # only Variation here.
-                    
-                    print "$class \'$entity_name\' (special case for Variation)\n";
+			) {
+			$linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
+		    }
 		    
-                    my $allele_root = removeAlleleSuffix($entity_name);
-                    my $url = "http://www.wormbase.org/db/get?name=$allele_root;class=Variation";
-                    
-                    $linked_xml = link_variation_in_xml($linked_xml, $entity_name, $allele_root, $url, \%orig);
-                }
-            }
-        }
-        
-        $tok_txt =~ s/\Q$entity_name\E/ /g;
+		    elsif ($class eq "Variation") {
+			my $allele_root = removeAlleleSuffix($entity_name);
+			$url = "http://www.wormbase.org/db/get?name=$allele_root;class=$class";
+			$linked_xml = link_variation_in_xml($linked_xml, $entity_name, $allele_root, $url, \%orig);
+		    }
+		    
+		    elsif ($class eq "Phenotype") {
+			my $phenotype_id = $lexicon->{$entity_name}{$class}; 
+			$url = "http://www.wormbase.org/db/get?name=$phenotype_id;class=$class";
+			$linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
+		    }
+		}
+	    }
+	}
+	
+	# special case for Variation. entries like snp_2L52[1]
+	elsif ($entity_name =~ /^snp_/) {
+	    if ($tok_txt =~ /($entity_name)/i) {
+		for my $class (keys %{$lexicon->{$entity_name}}) { # only Variation here.
+		    
+		    print "$class \'$entity_name\' (special case for Variation)\n";
+		    
+		    my $allele_root = removeAlleleSuffix($entity_name);
+		    my $url = "http://www.wormbase.org/db/get?name=$allele_root;class=Variation";
+		    
+		    $linked_xml = link_variation_in_xml($linked_xml, $entity_name, $allele_root, $url, \%orig);
+		}
+	    }
+	}
+		
+	$tok_txt =~ s/\Q$entity_name\E/ /g;
     }
     
-    $linked_xml = linkSpecialCasesUsingPatternMatch($linked_xml, $lexicon_ref, \%orig);
+    $linked_xml = linkSpecialCasesUsingPatternMatch($linked_xml, $lexicon, \%orig);
     
     $linked_xml = GeneralTasks::replace_hidden_entities($linked_xml, \%orig);
     
@@ -301,29 +424,98 @@ sub findAndLinkObjects {
     return $linked_xml;
 }
 
+sub getEntityClass {
+    my $link = shift;
+
+    if ( ($link =~ /(Gene)/) || ($link =~ /(Strain)/) || ($link =~ /(Clone)/) || ($link =~ /(Transgene)/) ||
+         ($link =~ /(Rearrangement)/) || ($link =~ /(Sequence)/) || ($link =~ /(Phenotype)/) ) {
+        return $1;
+    } elsif ($link =~ /Variation/i) {
+        return "Variation";
+#    } elsif ($link =~ /anatomy/i) {
+#        return "Anatomy";
+    } elsif ($link =~ /person/i) {
+        return "Person";
+    } elsif ($link =~ /GO\_term/i) {
+        return "GO";
+    }
+
+    die "died: The link $link does not have a valid entity class\n";
+}
+
 sub link_entity_in_xml {
     my $xml      = shift;
     my $entity   = shift;
     my $url      = shift;
     my $orig_ref = shift;
-    
+
+    my $w_before; 
+    my $w_after;
+    my $repl_after;
+    my $repl_before;
+    my $after;
+    my $before;
+
+# Replace the double colons in the text so that the linking routines works.
+    $xml =~ s/\:\:/DOUBLECOLON/g;
+
     my $hidden_entity = GeneralTasks::get_hidden_entity( $entity, $orig_ref );
     (my $hidden_url = $url) =~ s/\Q$entity\E/$hidden_entity/;
     
     my $jsid = 1;
+
     foreach ($xml =~ /\b\Q$entity\E\b/g) {
+        ( $w_before, $w_after ) = $xml =~ m/(\w+)\s*\Q$entity\E\s*(\w+)/;
+        
+        if (( index($w_before,"DOUBLECOLON") == -1 ) and ( index($w_after,"DOUBLECOLON") == -1 )){
         my $repl =  "<a href=\"$hidden_url\" id=\"$hidden_entity-$jsid\">$hidden_entity</a>"
-	    . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
-	    . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
-	    . "</a>";
-	
+                  . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
+                  . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
+                  . "</a>";
+        print "link_entity_in_xml: $entity\n";
+#        print "before: $w_before\n";
+#        print "after:  $w_after\n";
+
         $xml =~ s/\b\Q$entity\E\b/$repl/;
-	
+        $repl_after = $repl;
+        $repl_after .="\<\/italic\>";
+        $repl_after .= "DOUBLECOLON";
+        $repl_before = "DOUBLECOLON";
+        $repl_before .= "\<italic\>";
+        $repl_before .= $repl;
+
+#        print "repl = $repl\n";
+#        print "repl_before = $repl_before\n";
+#        print "repl_after = $repl_after\n";
+
+        $after = "\<\/italic\>";
+        $after .= "DOUBLECOLON";
+        $after .= "\b\Q$entity\E\b";        
+
+        $before = "DOUBLECOLON";
+        $before .= "\<italic\>";
+        $before .= "\b\Q$entity\E\b"; 
+
+        $xml =~ s/$repl_after/$after/;
+        $xml =~ s/$repl_before/$before/;
+#        print "xml = \n";
+#        print "$xml\n";
+#        print "\n\n";
+
+#        if ($xml =~ /DOUBLECOLON/) {
+#            print "DOUBLECOLON\: \t $xml\n";
+#        }
+
         $jsid++;
+        }
     }
-    
+
+# Place the double colons back into the text
+        $xml =~s/DOUBLECOLON/\:\:/g;
+
     return $xml;
 }
+
 
 sub link_variation_in_xml {
     my $xml         = shift;
@@ -331,32 +523,65 @@ sub link_variation_in_xml {
     my $name_in_url = shift;
     my $url         = shift;
     my $orig_ref    = shift;
-    
+
+    my $w_before; 
+    my $w_after;
+    my $repl_after;
+    my $repl_before;
+    my $after;
+    my $before;
+
+# Replace the double colons in the text so that the linking routines works.
+    $xml =~ s/\:\:/DOUBLECOLON/g;
+
     my $hidden_name_in_url = GeneralTasks::get_hidden_entity( $name_in_url, $orig_ref );
     (my $hidden_url = $url) =~ s/$name_in_url/$hidden_name_in_url/;
     
     my $hidden_entity = GeneralTasks::get_hidden_entity( $entity, $orig_ref );
-    
+
     my $jsid = 1;
     foreach ($xml =~ /\b$entity\b/g) {
+       ( $w_before, $w_after ) = $xml =~ m/(\w+)\s*\Q$entity\E\s*(\w+)/;
+        if (( index($w_before,"DOUBLECOLON") == -1 ) and ( index($w_after,"DOUBLECOLON") == -1 )){
         my $repl =  "<a href=\"$hidden_url\" id=\"$hidden_entity-$jsid\">$hidden_entity</a>"
-	    . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
-	    . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
-	    . "</a>";
-	
-        $xml =~ s/\b$entity\b/$repl/;
-	
-        $jsid++;
-    }
+                  . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
+                  . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
+                  . "</a>";
     
+        $xml =~ s/\b$entity\b/$repl/;
+
+        $repl_after = $repl;
+        $repl_after .="\<\/italic\>";
+        $repl_after .= "DOUBLECOLON";
+        $repl_before = "DOUBLECOLON";
+        $repl_before .= "\<italic\>";
+        $repl_before .= $repl;
+
+        $after = "\<\/italic\>";
+        $after .= "DOUBLECOLON";
+        $after .= "\b\Q$entity\E\b";        
+
+        $before = "DOUBLECOLON";
+        $before .= "\<italic\>";
+        $before .= "\b\Q$entity\E\b"; 
+
+        $xml =~ s/$repl_after/$after/;
+        $xml =~ s/$repl_before/$before/;
+
+        $jsid++;
+     }
+    }
+       $xml =~s/DOUBLECOLON/\:\:/g;
+
     return $xml;
 }
 
+
 sub escape_urls {
     my $xml = shift;
-    
+
     use URI::Escape;
-    
+
     my $xmlcopy = $xml;
     while ($xmlcopy =~ m{"http://www\.wormbase\.org/db/get\?name=(.+?);class=.+?"}g) {
         my $name_in_link = $1;
@@ -364,34 +589,19 @@ sub escape_urls {
         if ($esc_name ne $name_in_link) {
             $xml =~ s{"(http://www\.wormbase\.org/db/get\?name=)$name_in_link(;class=.+?)"}{"$1$esc_name$2"}g;
         }
-	
+
         $xmlcopy =~ s{"http://www\.wormbase\.org/db/get\?name=$name_in_link;class=.+?"}{ }g;
     }
-    
-    return $xml;
-}
 
-sub linkAuthorNames {
-    my $xml = shift;
-    my $wbpaper_id = shift;
-    my $xml_format = shift;
-    
-    my $ret = "";
-    if ($xml_format eq FLAT_XML_ID) {
-        $ret = linkAuthorNamesFlatXml($xml, $wbpaper_id);
-    } elsif ($xml_format eq NLM_XML_ID) {
-        $ret = linkAuthorNamesNlmXml($xml, $wbpaper_id);
-    }
-    
-    return $ret;
+    return $xml;
 }
 
 sub linkAuthorNamesNlmXml {
     my $xml = shift;
     my $wbpaper_id = shift;
-    
+
     my $xmlcopy = $xml;
-    
+
     print "Linking author names...\n\n";
     while ($xmlcopy =~ /<contrib contrib-type="author"( corresp="yes")?><name><surname>(.+?)<\/surname><given-names>(.+?)<\/given-names>/g) {
         my $surname = $2;
@@ -403,18 +613,18 @@ sub linkAuthorNamesNlmXml {
         $url_encoded_name =~ s/\.//g; # WormBase does not have the aliases with a period after middle name!
         my $url = "http://www.wormbase.org/db/misc/person?name=$url_encoded_name;paper=$wbpaper_id";
         print "url = $url\n\n";
-	
+
         # $xml =~ s/(<contrib contrib-type="author"( corresp="yes")?><name><surname>$surname<\/surname><given-names>$given_names<\/given-names><\/name>)/$1<ext-link ext-link-type="uri" xlink:href="$url"\/>/;
         $xml =~ s/<contrib contrib-type="author"( corresp="yes")?><name><surname>$surname<\/surname><given-names>$given_names<\/given-names><\/name>/<contrib contrib-type="author"$1><name><surname><a href="$url">$surname<\/a><\/surname><given-names><a href="$url">$given_names<\/a><\/given-names><\/name>/;
     }
-    
+
     return $xml;
 }
 
 sub linkAuthorNamesFlatXml {
     my $xml = shift;
     my $wbpaper_id = shift;
-    
+
     $xml =~ /\<Authors\>(.+)\<\/Authors\>/;
     my $author_names = $1; # <au_fname>Feifan</au_fname> <au_surname>Zhang</au_surname>, 
     # <au_fname>M. Maggie</au_fname> <au_surname>O&#x2019;Meara</au_surname>, and 
@@ -423,27 +633,27 @@ sub linkAuthorNamesFlatXml {
     while ($author_names =~ /<au_fname>(.+?)<\/au_fname> <au_surname>(.+?)<\/au_surname>/g) {
         my $firstname = $1;
         my $lastname  = $2;
-	
+
         my $clean_lastname = $lastname;
         $clean_lastname =~ s/\,$//; # DJS keeps commas inside the tags sometimes!
-	
+
         my $clean_firstname = $firstname;
         $clean_firstname =~ s/\.//g; # WB does not have period in first or middle names 
-	
+
         my $fullname  = "$clean_firstname $clean_lastname";
         my $url_encoded_name = uri_escape($fullname);
         my $url = "http://www.wormbase.org/db/misc/person?name=$url_encoded_name;paper=$wbpaper_id";
-	
+
         $xml =~ s/<au_fname>$firstname<\/au_fname> <au_surname>$lastname<\/au_surname>/<au_fname><a href="$url">$firstname<\/a><\/au_fname> <au_surname><a href="$url">$lastname<\/a><\/au_surname>/;
     }
-    
+
     return $xml;
 }
 
 sub linkAuthorNamesFlatXmlOld {
     my $xml = shift;
     my $wbpaper_id = shift;
-    
+
     $xml =~ /\<Authors\>(.+)\<\/Authors\>/;
     my $author_names = $1; # Meredith J. Ezak,* Elizabeth Hong,<SUP>1</SUP> Angela Chaparro-Garcia<SUP>1,2</SUP> and Denise M. Ferkey<SUP>3</SUP>
     # Sumeet Sarin,* Vincent Bertrand,* Henry Bigelow,*<SUP>,&#x2020;</SUP> Alexander Boyanov,* Maria Doitsidou,* Richard Poole,* Surinder Narula* 
@@ -451,13 +661,13 @@ sub linkAuthorNamesFlatXmlOld {
     
     # remove all XML <SUP> tags and their contents
     $author_names =~ s/\<SUP\>.+?\<\/SUP\>//g; # Meredith J. Ezak, Elizabeth Hong, Angela Chaparro-Garcia and Denise M. Ferkey
-    
+
     # remove all the asterisks
     $author_names =~ s/\*//g;
-    
+
     # remove other tags like <B>, <I>, etc.,
     $author_names =~ s/\<\/?.+?\>//g;
-    
+
     my @entries = split (/\,\s+/, $author_names);
     my $last_two_names = pop @entries;
     (my $author_1, my $author_2) = split(/ and /, $last_two_names);
@@ -467,13 +677,13 @@ sub linkAuthorNamesFlatXmlOld {
     } else { # put the last fullname back
         push @entries, $last_two_names;
     }
-    
+
     print "Author names\n";
     for my $fullname (@entries) {
         my $url_encoded_name = uri_escape($fullname);
         $url_encoded_name =~ s/\.//g; # WormBase does not have the aliases with a period after middle name!
         my $url = "http\:\/\/www\.wormbase\.org\/db\/misc\/person\?name=$url_encoded_name\;paper=$wbpaper_id";
-	
+
         # this is for DJS; middle initial is part of first name
         my @subnames = split(/\s/, $fullname);
         my $last_name = pop @subnames;
@@ -523,27 +733,35 @@ sub linkSpecialCasesUsingPatternMatch {
     return $xml;
 }
 
+
 sub linkSpecialGenesUsingPatternMatch {
     my $xml         = shift;
     my $lexicon_ref = shift;
     my $orig_ref    = shift;
-    
+
+    my $w_before; 
+    my $w_after;
+    my $repl_after;
+    my $repl_before;
+    my $after;
+    my $before;
+
     # link transgenes like sdf-9V to sdf-9 gene page
-    while ($xml =~ /\b([a-z]{1,4}-\d+)(p|V)\b/g) { 
+    while ($xml =~ /\b([a-z]{1,4}-\d+)(V)\b/g) { 
         my $gene = $1;
         my $suff = $2;
-	
+
         next if (! defined( $lexicon_ref->{$gene}{"Gene"} ));
-	
+
         my $url = "http://www.wormbase.org/db/get?name=$gene;class=Gene";
         #$xml =~ s/\b($gene$suff)\b/\<a href=\"$url\"\>$1\<\/a\>/g;
         $xml = link_entity_in_xml( $xml, 
                                    $gene . $suff,
                                    $url,
                                    $orig_ref
-	    );
+                                 );
     }
-    
+
     # link double mutant genes with no delimiters. eg: osm-9ocr-2
     while ($xml =~ /\b([a-zA-Z]{3,4}-\d+)([a-zA-Z]{3,4}-\d+)\b/g) { 
         my ($gene1, $gene2) = ($1, $2);
@@ -552,70 +770,86 @@ sub linkSpecialGenesUsingPatternMatch {
         if ( defined($lexicon_ref->{$gene1}{"Gene"}) ) { 
             $url1 = "http://www.wormbase.org/db/get?name=$gene1;class=Gene";
         }
-	
+
         my $url2;
         if ( defined($lexicon_ref->{$gene2}{"Gene"}) ) {
             $url2 = "http://www.wormbase.org/db/get?name=$gene2;class=Gene";
         }
-	
+
         if ($url1 && $url2) {
             print "Linking $gene1$gene2\n";
-            
+            $xml =~ s/\:\:/DOUBLECOLON/g;
             my $hidden_entity = GeneralTasks::get_hidden_entity( $gene1, $orig_ref );
             (my $hidden_url = $url1) =~ s/\Q$gene1\E/$hidden_entity/;
             my $jsid = 1;
             foreach ($xml =~ /\b\Q$gene1\E/g) {
+                        ( $w_before, $w_after ) = $xml =~ m/(\w+)\s*\Q$gene1\E\s*(\w+)/;
+             if (( index($w_before,"DOUBLECOLON") == -1 ) and ( index($w_after,"DOUBLECOLON") == -1 )){
                 my $repl =  "<a href=\"$hidden_url\" id=\"$hidden_entity-$jsid\">$hidden_entity</a>"
-		    . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
-		    . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
-		    . "</a>";
+                          . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
+                          . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
+                          . "</a>";
                 $xml =~ s/\b\Q$gene1$gene2\E\b/$repl$gene2/;
                 $jsid++;
             }
-	    
+           }
+
             $hidden_entity = GeneralTasks::get_hidden_entity( $gene2, $orig_ref );
             ($hidden_url = $url2) =~ s/\Q$gene2\E/$hidden_entity/;
             $jsid = 1;
             foreach ($xml =~ m{</a>\Q$gene2\E\b}g) {
+            ( $w_before, $w_after ) = $xml =~ m/(\w+)\s*\Q$gene2\E\s*(\w+)/;
+             if (( index($w_before,"DOUBLECOLON") == -1 ) and ( index($w_after,"DOUBLECOLON") == -1 )){
                 my $repl =  "<a href=\"$hidden_url\" id=\"$hidden_entity-$jsid\">$hidden_entity</a>"
-		    . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
-		    . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
-		    . "</a>";
+                          . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
+                          . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
+                          . "</a>";
                 $xml =~ s{</a>\Q$gene2\E\b}{</a>$repl};
                 $jsid++;
+             }
             }
-	    
+             $xml =~s/DOUBLECOLON/\:\:/g;
         } 
         elsif ($url1) {
             print "Linking $gene1\n";
+            $xml =~ s/\:\:/DOUBLECOLON/g;
             my $hidden_entity = GeneralTasks::get_hidden_entity( $gene1, $orig_ref );
             (my $hidden_url = $url1) =~ s/\Q$gene1\E/$hidden_entity/;
             my $jsid = 1;
             foreach ($xml =~ /\b\Q$gene1\E/g) {
+            ( $w_before, $w_after ) = $xml =~ m/(\w+)\s*\Q$gene1\E\s*(\w+)/;
+             if (( index($w_before,"DOUBLECOLON") == -1 ) and ( index($w_after,"DOUBLECOLON") == -1 )){
                 my $repl =  "<a href=\"$hidden_url\" id=\"$hidden_entity-$jsid\">$hidden_entity</a>"
-		    . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
-		    . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
-		    . "</a>";
+                          . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
+                          . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
+                          . "</a>";
                 $xml =~ s/\b\Q$gene1$gene2\E\b/$repl$gene2/;
                 $jsid++;
+             }
             }
+           $xml =~s/DOUBLECOLON/\:\:/g;
         } 
         elsif ($url2) { 
             print "Linking $gene2\n";
+            $xml =~ s/\:\:/DOUBLECOLON/g;
             my $hidden_entity = GeneralTasks::get_hidden_entity( $gene2, $orig_ref );
             (my $hidden_url = $url2) =~ s/\Q$gene2\E/$hidden_entity/;
             my $jsid = 1;
             foreach ($xml =~ m{\b\Q$gene1$gene2\E\b}g) {
+            ( $w_before, $w_after ) = $xml =~ m/(\w+)\s*\Q$gene2\E\s*(\w+)/;
+             if (( index($w_before,"DOUBLECOLON") == -1 ) and ( index($w_after,"DOUBLECOLON") == -1 )){
                 my $repl =  "<a href=\"$hidden_url\" id=\"$hidden_entity-$jsid\">$hidden_entity</a>"
-		    . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
-		    . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
-		    . "</a>";
+                          . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
+                          . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
+                          . "</a>";
                 $xml =~ s{\b\Q$gene1$gene2\E\b}{$gene1$repl};
                 $jsid++;
+             }
             }
+                    $xml =~s/DOUBLECOLON/\:\:/g; 
         }
     }
-    
+
     # link the 11 part in RGS-10/11 to RGS-11 gene page
     # link the -2 part in ZIM-1, -2 to ZIM-2 page
     my $xmlcopy = $xml;
@@ -626,9 +860,9 @@ sub linkSpecialGenesUsingPatternMatch {
         my $separator          = $4; # / or comma followed by space
         my $hyphen             = $5; # not defined in RGS-10/11 example
         my $second_gene_number = $6; # 11
-	
+
         my $first_gene = $orig_ref->{ $hidden_first_gene };
-	
+
         print "Matched full expression = $full_expression\n";
         print "Linked first part       = $linked_first_part\n";
         print "first gene              = $first_gene\n";
@@ -642,22 +876,22 @@ sub linkSpecialGenesUsingPatternMatch {
         if ($hyphen) {
             print "Linking \'$hyphen$second_gene_number\' in $full_expression to $new_url\n";
             $xmlcopy =~ s{\Q$full_expression\E}
-	    {$linked_first_part$separator<a href="$new_url">$hyphen$second_gene_number</a>};
+                        {$linked_first_part$separator<a href="$new_url">$hyphen$second_gene_number</a>};
         } else {
             #open (OUT, ">temp");
             #print OUT "$xml";
             #close (OUT);
             print "Linking \'$second_gene_number\' in $full_expression to $new_url\n";
             $xmlcopy =~ s{\Q$full_expression\E}
-	    {$linked_first_part$separator<a href="$new_url">$second_gene_number</a>};
+                         {$linked_first_part$separator<a href="$new_url">$second_gene_number</a>};
             #open (OUT, ">temp2");
             #print OUT "$xml";
             #close (OUT);
         }
     }
-    
+
     # $xml = TextpressoGeneralTasks::ReplaceSpecChar($xml);
-    
+        
     return $xmlcopy;
 }
 
@@ -666,7 +900,7 @@ sub linkSpecialVariationsUsingPatternMatch {
     my $xml = shift;
     my $lexicon_ref = shift;
     my $orig_ref = shift;
-    
+
     my %already_linked = ();
     my $xmlcopy = $xml;
     while ($xml =~ /\b([a-z]{1,3}\d+)([a-z]{1,3}\d+)\b/g) {
@@ -677,7 +911,7 @@ sub linkSpecialVariationsUsingPatternMatch {
         else {
             $already_linked{$var1}{$var2} = 1;
         }
-	
+             
         print "variation (caught with pattern match): $var1$var2\n";
         
         my $url1;
@@ -686,7 +920,7 @@ sub linkSpecialVariationsUsingPatternMatch {
             if ( defined($lexicon_ref->{$var1}{"Variation"}) );
         $url2 = "http://www.wormbase.org/db/get?name=$var2;class=Variation" 
             if ( defined($lexicon_ref->{$var2}{"Variation"}) );
-	
+
         if ($url1 && $url2) {
             print "Linking $var1$var2\n";
             
@@ -695,21 +929,21 @@ sub linkSpecialVariationsUsingPatternMatch {
             my $jsid = 1;
             foreach ($xml =~ /\b\Q$var1\E/g) {
                 my $repl =  "<a href=\"$hidden_url\" id=\"$hidden_entity-$jsid\">$hidden_entity</a>"
-		    . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
-		    . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
-		    . "</a>";
+                          . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
+                          . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
+                          . "</a>";
                 $xmlcopy =~ s/\b\Q$var1$var2\E\b/$repl$var2/;
                 $jsid++;
             }
-	    
+
             $hidden_entity = GeneralTasks::get_hidden_entity( $var2, $orig_ref );
             ($hidden_url = $url2) =~ s/\Q$var2\E/$hidden_entity/;
             $jsid = 1;
             foreach ($xml =~ m{</a>\Q$var2\E\b}g) {
                 my $repl =  "<a href=\"$hidden_url\" id=\"$hidden_entity-$jsid\">$hidden_entity</a>"
-		    . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
-		    . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
-		    . "</a>";
+                          . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
+                          . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
+                          . "</a>";
                 $xmlcopy =~ s{</a>\Q$var2\E\b}{</a>$repl};
                 $jsid++;
             }
@@ -721,9 +955,9 @@ sub linkSpecialVariationsUsingPatternMatch {
             my $jsid = 1;
             foreach ($xml =~ /\b\Q$var1\E/g) {
                 my $repl =  "<a href=\"$hidden_url\" id=\"$hidden_entity-$jsid\">$hidden_entity</a>"
-		    . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
-		    . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
-		    . "</a>";
+                          . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
+                          . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
+                          . "</a>";
                 $xmlcopy =~ s/\b\Q$var1$var2\E\b/$repl$var2/;
                 $jsid++;
             }
@@ -735,15 +969,15 @@ sub linkSpecialVariationsUsingPatternMatch {
             my $jsid = 1;
             foreach ($xml =~ m{\b\Q$var1$var2\E\b}g) {
                 my $repl =  "<a href=\"$hidden_url\" id=\"$hidden_entity-$jsid\">$hidden_entity</a>"
-		    . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
-		    . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
-		    . "</a>";
+                          . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
+                          . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
+                          . "</a>";
                 $xmlcopy =~ s{\b\Q$var1$var2\E\b}{$var1$repl};
                 $jsid++;
             }
         }
     }
-    
+
     return $xmlcopy;
 }
 
@@ -753,25 +987,24 @@ sub linkVariationUsingPatternMatch {
     my $lexicon_ref = shift;
     
     if ($entity_name =~ /([a-z]{1,3}\d+)([a-z]{1,3}\d+)/) {
-	my $part1 = $1;
+	    my $part1 = $1;
     	my $part2 = $2;
-	if (defined($lexicon_ref->{$part2}{"Variation"})) { # entries like ct46ct101 need to be linked to ct46 and ct101 pages
-	    my $url1 = "http://www.wormbase.org/db/get?name=$part1;class=Variation";
-	    my $url2 = "http://www.wormbase.org/db/get?name=$part2;class=Variation";
-	    $xml =~ s/\b($part1)($part2)\b/<a href=\"$url1\">$1<\/a><a href=\"$url2\">$2<\/a>/g;
+	    if (defined($lexicon_ref->{$part2}{"Variation"})) { # entries like ct46ct101 need to be linked to ct46 and ct101 pages
+	        my $url1 = "http://www.wormbase.org/db/get?name=$part1;class=Variation";
+	        my $url2 = "http://www.wormbase.org/db/get?name=$part2;class=Variation";
+	        $xml =~ s/\b($part1)($part2)\b/<a href=\"$url1\">$1<\/a><a href=\"$url2\">$2<\/a>/g;
     	} 
         else {
-	    my $url = "http://www.wormbase.org/db/get?name=$part1;class=Variation";
-	    $xml =~ s/\b($entity_name)\b/<a href=\"$url\">$1<\/a>/g;
+	        my $url = "http://www.wormbase.org/db/get?name=$part1;class=Variation";
+	        $xml =~ s/\b($entity_name)\b/<a href=\"$url\">$1<\/a>/g;
     	}
     } elsif ($entity_name =~ /([a-z]{1,3}\d+)(\w*)$/) { # link entries like ad450sd to ad450 page
-	my $url = "http://www.wormbase.org/db\/get?name=$1;class=Variation";
+	    my $url = "http://www.wormbase.org/db\/get?name=$1;class=Variation";
     	$xml =~ s/\b($entity_name)\b/<a href=\"$url\">$1<\/a>/g;
     }
     
     return $xml;
 }
-
 
 sub removeUnwantedLinks {
     my $xml = shift;
@@ -789,19 +1022,19 @@ sub removeUnwantedLinks {
 
 sub removeUnwantedLinksNlmXml {
     my $xml = shift;
-    
+
     $xml = GeneralTasks::removeLinksInAcknowledgments( $xml );
-    
+
     # remove any links in query comments like 
     # <!-- Q1 -->
     # <!-- Q2 -->
     # etc.,
     $xml =~ s{(<!-- )<a href="http://www\.wormbase\.org\S+?" id=".+?">(.+?)</a><a href=".+?"><sup><img src="\S+?"/></sup></a>( -->)}
     {$1$2$3}g;
-    
+
     my @xmls = split(/\n/, $xml);
     my $ret = "";
-    
+
     for $xml (@xmls) {
         if ($xml =~ /^<contrib contrib-type="author"/) {
             # then leave the links; these are author links
@@ -810,21 +1043,26 @@ sub removeUnwantedLinksNlmXml {
             $xml =~ s{<a href="http://www\.wormbase\.org/.+?" id=".+?">(.+?)</a><a href=".+?"><sup><img src="\S+?"/></sup></a>}{$1}g;
             $xml =~ s{<a href="http://www\.wormbase\.org/.+?">(.+?)</a>}{$1}g; # for GSP-3/4 - link to 4
         } 
-	
+
         # if gene followed by :: remove link
         $xml =~ s{<a href="http://www\.wormbase\.org/db/get\?name=\S+?;class=Gene" id=".+?">(\S+?)</a><a href=".+?"><sup><img src="\S+?"/></sup></a>(</I>)?(::)}{$1$2$3}g;
-	
+#        $xml =~ s{<a href="http://www\.wormbase\.org/db/get\?name=\S+?;class=Gene" id=".+?">(\S+?)</a><a href=".+?"><sup><img src="\S+?"/></sup></a>(</italic>::)}{$1$2$3}g;
+#         $xml =~ s{\<a href\="http\:\/\/www\.wormbase\.org\/db\/get\?name\=\S+?\;class\=Gene" id\=".+?"\>(\S+?)\<\/a\>\<a href\=".+?"\>\<sup\>\<img src\="\S+?"\/\>\<\/sup\>\<\/a\>(\<\/italic\>)?(\:\:)}{$1$2$3}g;
+#$xml =~ s{<a href="http://www\.wormbase\.org/db/get\?name=\S+?;class=Gene" id=".+?">(\S+?)</a><a href=".+?"><sup><img src="\S+?"/></sup></a>(</italic>::)}{$1$2$3}g;
+
         # if gene preceded by : remove link
+#        $xml =~ s{(::<I>)<a href="http://www\.wormbase\.org/db/get\?name=\S+?;class=Gene" id=".+?">(\S+?)</a><a href=".+?"><sup><img src="\S+?"/></sup></a>}{$1$2$3}g;
+       $xml =~ s{(::<italic>)<a href="http://www\.wormbase\.org/db/get\?name=\S+?;class=Gene" id=".+?">(\S+?)</a><a href=".+?"><sup><img src="\S+?"/></sup></a>}{$1$2$3}g;
         $xml =~ s{(:)<a href="http://www\.wormbase\.org/db/get\?name=\S+?;class=Gene" id=".+?">(\S+?)</a><a href=".+?"><sup><img src="\S+?"/></sup></a>}{$1$2$3}g;
-	
+#        $xml =~ s{<a href=".+?" id=".+?">(\S+?)</a><a href=".+?"><sup><img src=".+?"/></sup></a></italic>\:\:}{$1}g;            
         # Unlink genes that have a suffix 'p'
         # <a href="http://www.wormbase.org/db/get?name=aex-3;class=Gene">aex-3</a><SUB>p</SUB>
         # $xml =~ s/\<a href=\"http\:\/\/www\.wormbase\.org\/db\/get\?name=\S+?\;class=Gene\"\>(\S+?)\<\/a\>(\<SUB\>p\<\/SUB\>)/$1$2/g;
         $xml =~ s{<a href="http://www\.wormbase\.org/db/get\?name=\S+?;class=Gene" id=".+?">(\S+?)</a><a href=".+?"><sup><img src="\S+?"/></sup></a>(<SUB>p</SUB>)}{$1$2}g;
-	
         # Phenotype entity linking part to not link terms with in italics.
         $xml =~ s#(<I>)<a href="http://www\.wormbase\.org/db/get\?name=\S+?\;class=Phenotype" id=".+?">(\S+?)</a><a href=".+?"><sup><img src="\S+?"/></sup></a>(</I>)#$1$2$3#g;
-	
+#        $xml =~ s#(<italic>)<a href="http://www\.wormbase\.org/db/get\?name=\S+?\;class=Phenotype" id=".+?">(\S+?)</a><a href=".+?"><sup><img src="\S+?"/></sup></a>(</italic>)#$1$2$3#g;
+
         $ret .= $xml."\n";
     }
     return $ret;
@@ -832,10 +1070,10 @@ sub removeUnwantedLinksNlmXml {
 
 sub removeUnwantedLinksFlatXml {
     my $xml = shift;
-    
+
     my @xmls = split(/\n/, $xml);
     my $ret = "";
-    
+
     for my $line (@xmls) {
         if (dontLinkLine($line, FLAT_XML_ID)) {
             $line =~ s#<a href="http://www\.wormbase\.org/.+?">(.+?)</a>#$1#g;
@@ -843,31 +1081,37 @@ sub removeUnwantedLinksFlatXml {
         elsif ($line !~ m#<Authors>.+</Authors>#) { # remove persons other than authors (in Authors tag) getting linked
             $line =~ s#<a href="http://www\.wormbase\.org/db/misc/person\?name=.+?">(.+?)</a>#$1#g;
         }
-	
+
         # do not link only the gene part in transgenes. eg: do not link eor-1p or EOR-1 in eor-1p::EOR-1::GFP
         #$line =~ s/\<a href=\"http\:\/\/www\.wormbase\.org\/db\/gene\/gene\?name=\S+?\;class=Gene\"\>(\S+?)\<\/a\>(\:)/$1$2/g;
         $line =~ s/\<a href=\"http\:\/\/www\.wormbase\.org\/db\/get\?name=\S+?\;class=Gene\"\>(\S+?)\<\/a\>(\<\/I\>)?(\:\:)/$1$2$3/g;
+        $line =~ s/\<a href=\"http\:\/\/www\.wormbase\.org\/db\/get\?name=\S+?\;class=Gene\"\>(\S+?)\<\/a\>(\<\/italic\>)?(\:\:)/$1$2$3/g;
 
         #$line =~ s/(\:)\<a href=\"http\:\/\/www\.wormbase\.org\/db\/gene\/gene\?name=\S+?\;class=Gene\"\>(\S+?)\<\/a\>/$1$2/g;
-        $line =~ s/(\:)\<a href=\"http\:\/\/www\.wormbase\.org\/db\/get\?name=\S+?\;class=Gene\"\>(\S+?)\<\/a\>/$1$2/g;
+      $line =~ s/(\:)\<a href=\"http\:\/\/www\.wormbase\.org\/db\/get\?name=\S+?\;class=Gene\"\>(\S+?)\<\/a\>/$1$2/g;
+      $line =~ s/(\:\:\<italic\>)\<a href=\"http\:\/\/www\.wormbase\.org\/db\/get\?name=\S+?\;class=Gene\"\>(\S+?)\<\/a\>/$1$2/g;
+
         # <i><a href="http://www.wormbase.org/db/gene/gene?name=eor-1;class=Gene">eor-1p</a>::<a href="http://www.wormbase.org/db/gene/gene?name=EOR-1;class=Gene">EOR-1</a>::GFP</i>
-	
+                
         # Unlink genes that have a suffix 'p'
         # <a href="http://www.wormbase.org/db/get?name=aex-3;class=Gene">aex-3</a><SUB>p</SUB>
         $line =~ s/\<a href=\"http\:\/\/www\.wormbase\.org\/db\/get\?name=\S+?\;class=Gene\"\>(\S+?)\<\/a\>(\<SUB\>p\<\/SUB\>)/$1$2/g;
-	
+
         # Please fix the
         # Phenotype entity linking part to not link terms with in italics.
         # Phenotype terms should only be automatically linked if they occur
         # like "Hin" -first letter capitalized and plain text only.
         $line =~ s#(<I>)<a href="http://www\.wormbase\.org/db/get\?name=\S+?\;class=Phenotype">(\S+?)</a>(</I>)#$1$2$3#g;
-	
+#        $line =~ s#(<italic>)<a href="http://www\.wormbase\.org/db/get\?name=\S+?\;class=Phenotype">(\S+?)</a>(</italic>)#$1$2$3#g;
+
+
         $ret .= $line."\n";
     }
     return $ret;
 }
 
 sub removeXmlStuff {
+    my $self = shift;
     my $line = shift;
     $line =~ s/\<.+?\>/ /g;
     $line =~ s/\&#x(\S+?);//g;
@@ -875,12 +1119,15 @@ sub removeXmlStuff {
 }
 
 sub loadLexicon {
-    my $lexicon_ref = shift;
-    my $sorted_entries_ref = shift;
+    my $self        = shift;
+
+    my $lexicon        = {};
+    my $sorted_entries = [];
     
     my %classes = ();
-    open (IN, "<lexicon") or die ("Died: no lexicon input file named lexicon found in this dir\n");
-    print "Loading lexicon...\n";
+    my $file = "$Bin/../lexicon/lexicon";
+    open (IN, "<$file") or die (qw/Died: no lexicon input file named "lexicon" found in $_\n/);
+    print "\nLoading lexicon...\n";
     while (my $lexicon_line = <IN>) {
         chomp($lexicon_line);
         my $entity_name;
@@ -895,13 +1142,14 @@ sub loadLexicon {
             ($entity_name, $class_name) = @entries;
             $entity_id = $entity_name;
         }
-        $lexicon_ref->{$entity_name}{$class_name} = $entity_id;
-        push @$sorted_entries_ref, $entity_name;
+        $lexicon->{$entity_name}{$class_name} = $entity_id;
+        push @$sorted_entries, $entity_name;
     }
     close (IN);
     
     print "done.\n";
-    print "Size of lexicon = " . scalar(keys %$lexicon_ref) . "\n\n";
+    print "Size of lexicon = " . scalar(keys %$lexicon) . "\n\n";
+    return ($lexicon,$sorted_entries);
 }
 
 sub writeOutput {
@@ -990,9 +1238,6 @@ sub get_total_number_of_links {
     my $self = shift;
 }
 
-
-# the sub-routine below is not used now, but will be useful if pattern matching should
-# be used for entity recognition
 # was: formEntityTable
 sub build_entity_report {
     my ($self,$params) = @_;
@@ -1003,14 +1248,15 @@ sub build_entity_report {
     my $stage      = $self->stage;
     
     # This must be supplied.
-    my $xml_format = GeneralTasks::getXmlFormat($self->xml_filepath);
+#    my $xml_format = GeneralTasks::getXmlFormat($self->xml_filepath);
+    my $xml_format = GeneralTasks::getXmlFormat($self->input_file);
     
-    # get different docId's for the article
+    # Get different docId's for the article
     # I don't have these methods yet
     my $doi         = GeneralTasks::getDoi($linked_xml, $xml_format);
     my $genetics_id = GeneralTasks::getGeneticsId($linked_xml, $xml_format);
 
-    my $outfile    = join('/',$self->reports_directory,$self->html_filename);    
+    my $outfile    = join('/',$self->reports_directory,$self->filename_base . '.html');
     open (OUT, ">$outfile") or die ("Could not open $outfile for writing: $!");
         
     # Uniquify on class, entity and link    
@@ -1021,8 +1267,13 @@ sub build_entity_report {
         my $entity_name = $3;
 	
 #	last if $total_num_links == 10;
+        if (not defined($entity_url_hash{$entity_name}{$url})) {
+            $entity_url_hash{$entity_name}{$url} = 1;
+        } else {
+            $entity_url_hash{$entity_name}{$url}++;
+        }
 
-	$entity_url_hash{$entity_name}{$url}++;	
+#	$entity_url_hash{$entity_name}{$url}++;	
         $total_num_links++;
     }
     
@@ -1038,8 +1289,7 @@ sub build_entity_report {
         for my $link (sort {lc($a) cmp lc($b)} keys %{$entity_url_hash{$entity}}) {
             my $class = $self->get_entity_class_from_link($link);
             #my $link_status = isLivePage( $link );
-
-	    
+	    next unless $class eq 'Variation';
             # log
             print LOG "$entity\t$class\t$link\n";
             ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
@@ -1077,25 +1327,44 @@ sub build_entity_report {
                 # get the title
                 $content =~ /<title>(.+?)<\/title>/i;
                 my $title = $1;
+		
+		# Remove stuff that just clutters the report
                 $title =~ s/\(WB.+?\)//g; # removes the unwanted WBid stuff
                 $title =~ s/\s{2,}/ /g;
-
-		$data{content}{" title"} = $title;		
+		$title =~ s/WormBase Nematode Information Resource//g;
 		
-                # extract contents from some fields. rest simply display title only.
+		$data{content}{"title"} = $title;		
+		
+                # Extract contents from some fields.
+		# Other entities just display the title.
                 if ($class eq "Variation") {
-                    $content =~ /<th.+?>\s*Corresponding\s+gene:.+?<a.+?>(.+?)<\/a>/i;
-                    my $gene = $1;
-		    
-                    # remove the unwanted WBgeneID
-                    $gene =~ s/\(WBGene.+?\)//g;
-                    $gene =~ s/\s+$//;
-		    
-		    $data{content}{corresponding_gene} = $gene;
+
+		    my $json = $self->consume_rest_interface("/rest/widget/variation/$entity/overview");
+		    if ($json) {
+			my $gene_id = $json->{fields}->{corresponding_gene}->{data}->[0]->{id};
+			my $label   = $json->{fields}->{corresponding_gene}->{data}->[0]->{label};
+			
+			print $gene_id . "\n";
+			print $label   . "\n";
+			
+#		    print $entity;
+#		    print Dumper $json;
+#		    die;
+#		    my $gene = $json;
+#		    
+#                    # remove the unwanted WBgeneID
+#                    $gene =~ s/\(WBGene.+?\)//g;
+#                    $gene =~ s/\s+$//;		    
+			$data{content}{corresponding_gene} = a({-href=>"http://www.wormbase.org/db/get?name=$gene_id;class=Gene",
+								-target => '_blank'
+							       },							   
+							       $label);
+		    }
 		} elsif ($class eq "Phenotype") {
 		    $content =~ /<th.+?>\s*Primary\s+name:.+?<a.+?>(.+?)<\/a>/i;
                     my $primary_name = $1;
 		    $data{content}{primary_name} = $primary_name;
+#		    $hash{$class}{$entity}{"<B>Title</B>: '$title' <BR/> <B>Corresponding gene</B>: '$gene'"} = $link;
 		} elsif ($class eq "GO") {
                     $content =~ m#<th.+?>\s*Term:.*?<td.*?>(.+?)</td>#i;
                     my $GO_term = $1;
@@ -1112,9 +1381,13 @@ sub build_entity_report {
 	    $data{response_code}  = $response_code;
 	    
 	    print STDERR join("\t",
-			      "Entity: $entity","Class: $class","Status: $request_status","Response: $response_code") . "\n";
+			      "Entity: $entity",
+			      "Class: $class",
+			      "Status: $request_status",
+			      "Response: $response_code") . "\n";
 	    print LOG "Status: $request_status\n";
-            
+
+            # OMG
             ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
             printf LOG "%4d-%02d-%02d %02d:%02d:%02d\n\n",$year+1900,$mon+1,$mday,$hour,$min,$sec;
 
@@ -1256,36 +1529,36 @@ sub get_entity_class_from_link {
 
 sub getAuthorObjects {
     my $contents = shift;
-    my $af_page = "http://tazendra.caltech.edu/~postgres/cgi-bin/journal/journal_all.cgi?action=Show+Data&type=textpresso";
-    
+#    my $af_page = "http://tazendra.caltech.edu/~postgres/cgi-bin/journal/journal_all.cgi?action=Show+Data&type=textpresso";
+    my $af_page = "http://tazendra.caltech.edu/~postgres/cgi-bin/author_fp_display.cgi?action=Show+Data&type=textpresso"; 
     # $contents = TextpressoGeneralTasks::InverseReplaceSpecChar($contents);
     $contents =~ /\<doi\>(.+)\<\/doi\>/; # <doi>10.1534/genetics.110.115188</doi>
     my $doi = "doi".$1;
-    
+
     my $author_form_contents = TextpressoGeneralTasks::getwebpage($af_page);
     my @lines = split(/\n/, $author_form_contents);
-    
+
     my $wbpaper_id = 0;
     my %data_entries = ();
     
     for (my $i = 0; $i < @lines; $i++) {
-        if ($lines[$i] eq "<tr>") {
+        if ($lines[$i] eq "\<tr\>") {
             my $doi_in_form = $lines[$i+1];
             $doi_in_form =~ s/\<.+?\>//g;
             if ($doi_in_form eq $doi) {
                 $wbpaper_id = $lines[$i+2];
                 $wbpaper_id =~ s/\<.+?\>//g;
-		
+
                 my $data_line = $lines[$i+4];
                 $data_line =~ s/\<.+?\>//g;
-		
+
                 # remove invalid data i.e. anything after ~~
                 $data_line =~ s/~~.+$//;
                 # remove stuff inside [ ]
                 $data_line =~ s/\[.+?\]//g;
                 # assuming author data is comma-separated
                 my @entries = split(/\,/, $data_line);
-		
+
                 for my $e (@entries) {
                     $e =~ s/^\s+//;
                     $data_entries{$e} = 1;
@@ -1297,6 +1570,7 @@ sub getAuthorObjects {
     return %data_entries;
 }
 
+
 # this sub-routine may need clean-up later if more curators are added
 # or if the curator name changes!
 sub getResponsibleCurator {
@@ -1304,22 +1578,15 @@ sub getResponsibleCurator {
     # return "everyone";
     
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)
-	= localtime(time); # $mon = 0 for Jan
-    
-    my @curator_emails = @{(WormbaseLinkGlobals::CURATOR_EMAILS)};
-    
+            = localtime(time); # $mon = 0 for Jan
+
+#    my @curator_emails = @{(WormbaseLinkGlobals::CURATOR_EMAILS)};
+    my @curator_emails = read_file(Specs::EMAIL_DIR . 'curators.txt');
+
     # round robin on 3 curators depending on month
     my $responsible_curator_email = $curator_emails[ $mon % 3 ];
     my ($user_name, $domain_name) = split(/\@/, $responsible_curator_email);
-    
-    if ($user_name eq "karen") {
-        $user_name = "Karen Yook";
-    } elsif ($user_name eq "cgrove") {
-        $user_name = "Christian A. Grove";
-    } elsif ($user_name eq "draciti") {
-        $user_name = "Daniela Raciti";
-    }
-    
+
     return $user_name;
 }
 
@@ -1365,9 +1632,7 @@ sub isLivePage {
     }
 }
 
-sub getSender {
-    return WormbaseLinkGlobals::DEVELOPER_EMAIL;
-}
+
 
 sub getReceivers {
     my @receivers = ();
@@ -1421,6 +1686,8 @@ sub original_txt_is_preserved {
     my $original = shift;
     my $linked   = shift;
     my $gsa_id   = shift;
+    my $developer_emails;
+    $developer_emails = read_file(Specs::EMAIL_DIR . '/developers.txt');
     
     # delete all links to entities
     $linked =~ s{<a href="\S+?" id=".+?">(.+?)</a><a href=".+?"><sup><img \S+?/></sup></a>}
@@ -1440,8 +1707,10 @@ sub original_txt_is_preserved {
                   . "Linked line:\n$linked_lines[$i]\n";
 
             # email the developer with the error
-            mailer( WormbaseLinkGlobals::DEVELOPER_EMAIL,
-                    WormbaseLinkGlobals::DEVELOPER_EMAIL,
+#            mailer( WormbaseLinkGlobals::DEVELOPER_EMAIL,
+#                    WormbaseLinkGlobals::DEVELOPER_EMAIL,
+            GeneralTasks::mailer( $developer_emails,
+                    $developer_emails,
                     "Fatal error in WB GSA file $gsa_id (Text changed during linking)",
                     "Original line:\n$orig_lines[$i]\n\n"
                     . "Linked line:\n$linked_lines[$i]\n" 
@@ -1454,5 +1723,22 @@ sub original_txt_is_preserved {
     return 1;
 }
 
+sub consume_rest_interface {
+    my $self = shift;
+    my $url  = shift;
+    my $ua   = $self->my_user_agent;
+    $ua->default_header('Content-type' => 'application/json');
+
+    my $link = "http://api.wormbase.org/$url";
+    my $response      = $ua->get($link);
+    my $response_code = $response->status_line;
+    my $json          = $response->content;       
+    if ($response_code == 200) {
+	my $decoded_json = decode_json( $json );
+	return $decoded_json;
+    } else {
+	return undef;
+    }
+}
 
 1;
