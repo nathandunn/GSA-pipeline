@@ -21,11 +21,12 @@ has 'stage' => (
     is => 'rw',
     );
 
-has 'output' => (
+has 'output-dir' => (
     is => 'rw',    
     lazy_build => 1,
     );
 
+# TODO: once directory structure is rearranged.
 sub _build_output {
     my $self = shift;
     my $this = shift;  # The base output directory
@@ -35,30 +36,30 @@ sub _build_output {
     return "$this/$date";
 }
 
-has 'reports_directory' => (
+has 'entity_reports_directory' => (
     is => 'rw',    
     lazy_build => 1,
     );
 
-sub _build_reports_directory {
+sub _build_entity_reports_directory {
     my $self = shift;
-    my $path = "$Bin/../entity_reports";
+    my $path = "$Bin/../entity_link_tables";
     mkdir($path,0775) or warn "Couldn't mkdir $path: $!";
     return $path;
 }
 
 # was: linkedxmldir
-has 'xml_directory' => (
-    is => 'rw',    
-    lazy_build => 1,
-    );
+#has 'xml_directory' => (
+#    is => 'rw',    
+#    lazy_build => 1,
+#    );
 
-sub _build_xml_directory {
-    my $self = shift;
-    my $path = $self->output . "/xml";
-    mkdir($path,0775) or die "Couldn't mkdir $path";
-    return $path;
-}
+#sub _build_xml_directory {
+#    my $self = shift;
+#    my $path = $self->output . "/xml";
+#    mkdir($path,0775) or die "Couldn't mkdir $path";
+#    return $path;
+#}
 
 =pod
 
@@ -154,6 +155,8 @@ sub _build_wormbase_paper_id {
 }
 
 
+# This is the input file (plus full path),
+# an anamoly of the pipeline interface.
 has 'input_file' => (
     is => 'rw',
     lazy_build => 1,
@@ -212,6 +215,10 @@ sub _build_html_filepath {
 
 =cut
 
+has 'stage' => (
+    is => 'rw',
+    );
+
 has 'log_file' => (
     is => 'rw',
     lazy_build => 1,
@@ -224,9 +231,8 @@ sub _build_log_file {
 #    my $file_id = $1;
 #    my $file_id = $self->filename_base;
     
-    # really?  This doesn't take into account
-    # first pass (03) or other steps.
-    my $log_file = $self->output . "/" . $self->filename_base . '.log';
+    my $stage = $self->stage;
+    my $log_file = $Bin . "/../logs/" . $self->filename_base . "-$stage.log";
     if (-e $log_file) {
 	die "log file $log_file already exists. Won't run again!\n";
     }
@@ -1244,8 +1250,8 @@ sub build_entity_report {
     
     my $linked_xml = $self->linked_xml;
     my $wbpaper_id = $self->wormbase_paper_id;
-    my $log_file   = $self->log_file;
     my $stage      = $self->stage;
+    my $log_file   = $self->log_file;
     
     # This must be supplied.
     my $xml_format = GeneralTasks::getXmlFormat($self->input_file);
@@ -1257,7 +1263,7 @@ sub build_entity_report {
 
     # TH: This should PROBABLY just go to the same directory as the source.
     #     but be called something like filename_base.entity_report.html    
-    my $outfile    = join('/',$self->reports_directory,$self->filename_base . '.html');
+    my $outfile    = join('/',$self->entity_reports_directory,$self->filename_base . "-$stage.html");
     open (OUT, ">$outfile") or die ("Could not open $outfile for writing: $!");
         
     # Uniquify on class, entity and link    

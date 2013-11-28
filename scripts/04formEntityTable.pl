@@ -5,46 +5,57 @@
 
 use strict;
 use FindBin qw/$Bin/;
-use Getopt::Long;
 use lib "$Bin/../perlmodules";
 use WormbaseLinkTasks;
 use GeneralTasks;
+use Getopt::Long;
 
-my ($input_file,$output,$help);
-GetOptions( 'input-file=s'      => \$input_file,
-	    'output-directory=s'=> \$output,
-	    'help'              => \$help);
+use constant STAGE => 'post-qaqc-04formEntityTable';
 
-unless ($html && $output) {
+my ($input_file,$output_dir,$help);
+GetOptions( 'input-file=s'=> \$input_file,
+	    'output-dir=s'=> \$output_dir,
+	    'help'        => \$help);
+
+if ($help || !$input_file) {
     die <<USAGE;
-USAGE: $0 --input-file <full path to linked XML file> --output-directory <directory for output files>
 
-    Omit --output to retain consistency with old-style clutter strategy.
+USAGE: $0 --input-file <full path to linked XML file>
 
-   eg: $0 --input-file ../gen110270_fin.html --output output/
+  Required options:
+     --input-file   full or relative path to linked XML file.
+                    eg: ../html/110270.html (actually XML!!)
 
-# In an ideal world where the input/output is sane...
-#   The output/ directory will contain two subdirectories:
-#       linked_xml/  - linked xml files
-#       entity_reports/ - entity report files in html
+  Options:
+     --output-dir  directory for output files. Default: ../linked_xml
 
 USAGE
 ;
 }
 
-# For backwards compatability with the old pipeline,
-$output ||= "$Bin/../";
+#'
 
-my $elf = WormbaseLinkTasks->new({ stage      => 'post QC',
-				   output     => $output,
-				   input_file => $html,
+# For backwards compatability with the old pipeline
+$output_dir ||= "$Bin/../linked_xml";
+
+my $elf = WormbaseLinkTasks->new({ stage      => STAGE,
+#				   output-dir => $output_dir,  # output-dir not actually used by module yet
+				   input_file => $input_file,
 				 });
 
 
-# Why?
-GeneralTasks::create_linked_xml_file($elf->html_filepath, $elf->xml_filepath);
+# This basically strips some of the (html) from the XML file.
+#GeneralTasks::create_linked_xml_file($elf->html_filepath, $elf->xml_filepath);
+
+my $filename = $elf->filename_base;
+GeneralTasks::create_linked_xml_file($elf->input_file,"$output_dir/$filename.xml");
 
 $elf->build_entity_report();
 
-print "Entity table available in " . join('/',$elf->reports_directory,$elf->html_filename) . "\n";
+# This belongs in the build_entity_report method.
+print "    " . STAGE . " entity table available at " 
+    . join('/',$elf->entity_reports_directory,$filename . '-' . STAGE . '.html') . "\n";
+
 print "DONE.\n";
+
+exit (0);

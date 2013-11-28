@@ -22,6 +22,8 @@ use File::Slurp;
 use Specs;
 use Getopt::Long;
 
+use constant STAGE => 'first-pass-03link';
+
 my ($input_dir,$output_dir,$help);
 GetOptions( 'input-dir=s'  => \$input_dir,
 	    'output-dir=s' => \$output_dir,
@@ -51,15 +53,15 @@ $output_dir ||= "$Bin/../html";
 my %seen;
 my @xmlfiles = grep {!$seen{$_}++ } GeneralTasks::getNewFiles($input_dir, $output_dir);
 
-for my $xmlfile (@xmlfiles) {
+for my $input_file (@xmlfiles) {
     print "Processing $xmlfile...\n";
 
     # Elves do all the heavy lifting.
     # OO programming is like magic!
-    my $elf = WormbaseLinkTasks->new({ stage        => '03-link.pl: first pass linking entities to WormBase',
-				       output       => $output_dir,
+    my $elf = WormbaseLinkTasks->new({ stage        => STAGE,
+				       output_dir   => $output_dir,
 				       input_dir    => $input_dir,  # actually extractable by filename, was xml_filepath
-				       input_file   => $xmlfile,
+				       input_file   => $input_file,
 				     });
 
 #    warn "hmtl_filename: " . $elf->html_filename . "\n";
@@ -67,13 +69,13 @@ for my $xmlfile (@xmlfiles) {
 #    warn "xml_filename: " . $elf->xml_filename . "\n";
 #    die;
     
-    my $xml_format = GeneralTasks::getXmlFormat($xmlfile);
+    my $xml_format = GeneralTasks::getXmlFormat($input_file);
         
     # pre-processing
-    GeneralTasks::convertDosFileToUnixFile($xmlfile);
+    GeneralTasks::convertDosFileToUnixFile($input_file);
     
     my @lines = ();
-    open (IN, "<$xmlfile") or die ("Died. Input file $xmlfile not found.");
+    open (IN, "<$input_file") or die ("Died. Input file $input_file not found.");
 
     my ($xml_contents,$tokenized_contents);
     while (my $xml_line = <IN>) {
