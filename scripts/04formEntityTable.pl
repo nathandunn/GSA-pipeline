@@ -5,29 +5,28 @@
 
 use strict;
 use FindBin qw/$Bin/;
+use Getopt::Long;
 use lib "$Bin/../perlmodules";
 use WormbaseLinkTasks;
 use GeneralTasks;
-use Getopt::Long;
 
-my ($html,$output,$help);
-GetOptions( 'html-file=s'       => \$html,
+my ($input_file,$output,$help);
+GetOptions( 'input-file=s'      => \$input_file,
 	    'output-directory=s'=> \$output,
 	    'help'              => \$help);
 
 unless ($html && $output) {
     die <<USAGE;
-USAGE: $0 --html-file <full path to linked HTML file> --output-directory <directory for output files>
+USAGE: $0 --input-file <full path to linked XML file> --output-directory <directory for output files>
 
-   NOTE!  --html should simply be renamed to "--input-file" to match the module interface.
-   
     Omit --output to retain consistency with old-style clutter strategy.
 
-   eg: $0 --html ../gen110270_fin.html --output output/
+   eg: $0 --input-file ../gen110270_fin.html --output output/
 
-   The output/ directory will contain two subdirectories:
-       linked_xml/  - linked xml files
-       entity_reports/ - entity report files in html
+# In an ideal world where the input/output is sane...
+#   The output/ directory will contain two subdirectories:
+#       linked_xml/  - linked xml files
+#       entity_reports/ - entity report files in html
 
 USAGE
 ;
@@ -41,10 +40,9 @@ my $elf = WormbaseLinkTasks->new({ stage      => 'post QC',
 				   input_file => $html,
 				 });
 
-# Not refactored.
-GeneralTasks::create_linked_xml_file($elf->html_filepath, $elf->xml_filepath);
 
-print "forming entity table...\n";
+# Why?
+GeneralTasks::create_linked_xml_file($elf->html_filepath, $elf->xml_filepath);
 
 $elf->build_entity_report();
 

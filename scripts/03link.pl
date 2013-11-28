@@ -135,7 +135,7 @@ for my $xmlfile (@xmlfiles) {
     my @email_receivers = $elf->email_receivers;
     
     for my $receiver (@email_receivers) {
-        print "Sending email $receiver\n";
+        print "Sending email for confirmation: $receiver\n";
 #        GeneralTasks::mailer($email_sender, $receiver, $subject, $body);
     }
 }

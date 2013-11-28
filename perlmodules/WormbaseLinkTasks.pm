@@ -1248,7 +1248,6 @@ sub build_entity_report {
     my $stage      = $self->stage;
     
     # This must be supplied.
-#    my $xml_format = GeneralTasks::getXmlFormat($self->xml_filepath);
     my $xml_format = GeneralTasks::getXmlFormat($self->input_file);
     
     # Get different docId's for the article
@@ -1256,6 +1255,8 @@ sub build_entity_report {
     my $doi         = GeneralTasks::getDoi($linked_xml, $xml_format);
     my $genetics_id = GeneralTasks::getGeneticsId($linked_xml, $xml_format);
 
+    # TH: This should PROBABLY just go to the same directory as the source.
+    #     but be called something like filename_base.entity_report.html    
     my $outfile    = join('/',$self->reports_directory,$self->filename_base . '.html');
     open (OUT, ">$outfile") or die ("Could not open $outfile for writing: $!");
         
@@ -1289,8 +1290,8 @@ sub build_entity_report {
         for my $link (sort {lc($a) cmp lc($b)} keys %{$entity_url_hash{$entity}}) {
             my $class = $self->get_entity_class_from_link($link);
             #my $link_status = isLivePage( $link );
-	    next unless $class eq 'Variation';
-            # log
+
+            # Log requests, dunno why.
             print LOG "$entity\t$class\t$link\n";
             ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
             printf LOG "%4d-%02d-%02d %02d:%02d:%02d\n",$year+1900,$mon+1,$mday,$hour,$min,$sec;
@@ -1318,47 +1319,37 @@ sub build_entity_report {
                 # extract some content from the downloaded page for display on the entity table
 		
 		# It would be better to send direct requests to the API
-		# instead of screen scraping.
+		# instead of screen scraping.  -- TH. See the consume_rest_interface for example.
 		
                 # put the entire content in one line for easy pattern matching below
                 my @lines = split(/\n/, $content);
                 $content = join(" ", @lines);
 		
-                # get the title
+                # Fetch the page title.
                 $content =~ /<title>(.+?)<\/title>/i;
                 my $title = $1;
+		die $content unless $title;
 		
-		# Remove stuff that just clutters the report
-                $title =~ s/\(WB.+?\)//g; # removes the unwanted WBid stuff
+		# Remove things that just create clutter.
+                $title =~ s/\(WB.+?\)//g;
                 $title =~ s/\s{2,}/ /g;
-		$title =~ s/WormBase Nematode Information Resource//g;
+		$title =~ s/\- WormBase : Nematode Information Resource//g;
 		
-		$data{content}{"title"} = $title;		
+		$data{content}{'page title'} = $title;		
 		
                 # Extract contents from some fields.
 		# Other entities just display the title.
                 if ($class eq "Variation") {
-
+		    
 		    my $json = $self->consume_rest_interface("/rest/widget/variation/$entity/overview");
 		    if ($json) {
 			my $gene_id = $json->{fields}->{corresponding_gene}->{data}->[0]->{id};
-			my $label   = $json->{fields}->{corresponding_gene}->{data}->[0]->{label};
-			
-			print $gene_id . "\n";
-			print $label   . "\n";
-			
-#		    print $entity;
-#		    print Dumper $json;
-#		    die;
-#		    my $gene = $json;
-#		    
-#                    # remove the unwanted WBgeneID
-#                    $gene =~ s/\(WBGene.+?\)//g;
-#                    $gene =~ s/\s+$//;		    
-			$data{content}{corresponding_gene} = a({-href=>"http://www.wormbase.org/db/get?name=$gene_id;class=Gene",
-								-target => '_blank'
-							       },							   
-							       $label);
+			my $label   = $json->{fields}->{corresponding_gene}->{data}->[0]->{label};		       
+			$data{content}{'corresponding gene'} = 
+			    a({-href=>"http://www.wormbase.org/db/get?name=$gene_id;class=Gene",
+			       -target => '_blank'
+			      },							   
+			      $label);
 		    }
 		} elsif ($class eq "Phenotype") {
 		    $content =~ /<th.+?>\s*Primary\s+name:.+?<a.+?>(.+?)<\/a>/i;
@@ -1402,9 +1393,9 @@ sub build_entity_report {
 #1. The table had sortable columns
 #3. rows with errors were hilighted
 #4 there was some logic that tested the page title against the desired link (or maybe made a request for a widget from the page instead of the page itself)
-#you could request, say, the overview widget which should exist on every page.
-#If that's succesful, the full page link will also work.
-#and you could parse some of the data to see if it matches the requested object in the url
+# You could request, say, the overview widget which should exist on every page.
+# If that's succesful, the full page link will also work.
+# and you could parse some of the data to see if it matches the requested object in the url
     
     # print end time to log file
     ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
@@ -1457,14 +1448,12 @@ END
 	    th('response status'),	    
 	    th('relevant content from URL'),
 	    th('# of linked occurrences'));
-
-
     
     for my $class (sort keys %hash) {
         for my $entity (sort {lc($a) cmp lc($b)} keys %{$hash{$class}}) {
 	    foreach my $data (@{$hash{$class}{$entity}}) {
 		my $status = $data->{request_status};
-
+		
 		my $class_display = $class eq 'Gene' ? 'Gene/Protein' : $class;
 		
 		my $status_class;
@@ -1477,8 +1466,9 @@ END
                 } else { # the status itself has some content downloaded from the URL
 		    $status_class = 'live';
                 }
-
-		my $content = join("\n",map { "<b>$_</b>: $data->{content}->{$_}" } keys %{$data->{content}});
+		
+		my $content = join("<br />",
+				   map { "<b>$_</b>: $data->{content}->{$_}" } keys %{$data->{content}});
 		
 		my $link = $data->{link};
 		print OUT 
@@ -1726,14 +1716,15 @@ sub original_txt_is_preserved {
 sub consume_rest_interface {
     my $self = shift;
     my $url  = shift;
-    my $ua   = $self->my_user_agent;
+    my $ua = LWP::UserAgent->new();
+    $ua->agent("GSA Markup Pipeline/1.0");
     $ua->default_header('Content-type' => 'application/json');
 
     my $link = "http://api.wormbase.org/$url";
     my $response      = $ua->get($link);
     my $response_code = $response->status_line;
     my $json          = $response->content;       
-    if ($response_code == 200) {
+    if ($response_code eq "200 OK") {
 	my $decoded_json = decode_json( $json );
 	return $decoded_json;
     } else {
