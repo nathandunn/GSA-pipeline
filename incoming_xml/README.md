@@ -1,16 +1,18 @@
-This is a placeholder directory that mirrors
-the directory structure required when the
-markup pipeline is run at Caltech.
+This is a placeholder directory for new incoming
+XML documents to be marked up by the pipeline.
 
-It must exist in advance; it is not created.
+1. This directory must exist. It is not created automatically.
 
-More sensibly and cleanly, it should probably
-be placed in a top-level "input" directory:
+2. Files should be named with the following format:
 
-  input/incoming_xml
+   [client]-[articleID].xml
 
-It is used by:
+   eg: GSA-1111111111.xml
+
+3. Files in this directory are processed by:
    
-  ./scripts/03link.pl
+     ./scripts/03link.pl
 
 Todd Harris
+27 Nov 2013
+toddwharris@gmail.com

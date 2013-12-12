@@ -10,7 +10,8 @@ use WormbaseLinkTasks;
 use GeneralTasks;
 use Getopt::Long;
 
-use constant STAGE => 'post-qaqc-04formEntityTable';
+use constant STAGE => 'post-qaqc';
+use constant CREATED_BY => '04formEntityTable.pl';
 
 my ($input_file,$output_dir,$help);
 GetOptions( 'input-file=s'=> \$input_file,
@@ -19,27 +20,20 @@ GetOptions( 'input-file=s'=> \$input_file,
 
 if ($help || !$input_file) {
     die <<USAGE;
-
-USAGE: $0 --input-file <full path to linked XML file>
-
-  Required options:
-     --input-file   full or relative path to linked XML file.
-                    eg: ../html/110270.html (actually XML!!)
-
-  Options:
-     --output-dir  directory for output files. Default: ../linked_xml
+    
+  USAGE: $0 --input-file <full path to linked XML file>
+      
+      REQUIRED options:
+      --input-file   full or relative path to linked XML file.
+    
+      eg: ../output/GSA/110270/110270-linked.xml
 
 USAGE
 ;
+
 }
 
-#'
-
-# For backwards compatability with the old pipeline
-$output_dir ||= "$Bin/../linked_xml";
-
 my $elf = WormbaseLinkTasks->new({ stage      => STAGE,
-#				   output-dir => $output_dir,  # output-dir not actually used by module yet
 				   input_file => $input_file,
 				 });
 
@@ -48,14 +42,11 @@ my $elf = WormbaseLinkTasks->new({ stage      => STAGE,
 #GeneralTasks::create_linked_xml_file($elf->html_filepath, $elf->xml_filepath);
 
 my $filename = $elf->filename_base;
-GeneralTasks::create_linked_xml_file($elf->input_file,"$output_dir/$filename.xml");
+my $stage_directory = $elf->stage_directory;
+
+GeneralTasks::create_linked_xml_file($elf->input_file,"$stage_directory/$filename-cleaned.xml");
 
 $elf->build_entity_report();
 
-# This belongs in the build_entity_report method.
-print "    " . STAGE . " entity table available at " 
-    . join('/',$elf->entity_reports_directory,$filename . '-' . STAGE . '.html') . "\n";
-
-print "DONE.\n";
 
 exit (0);

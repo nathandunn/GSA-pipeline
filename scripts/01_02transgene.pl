@@ -3,6 +3,7 @@
 use strict;
 use diagnostics;
 use DBI;
+use FindBin qw/$Bin/;
 use Encode qw( from_to is_utf8 );
 
 my $dbh = DBI->connect ( "dbi:Pg:dbname=testdb;host=131.215.52.76", "acedb", "") or die "Cannot connect to database!\n";
@@ -11,7 +12,7 @@ my $dbh = DBI->connect ( "dbi:Pg:dbname=testdb;host=131.215.52.76", "acedb", "")
 #chdir ($dir) or die "Cannot change to $dir : $!";
 
 
-my $outfile = "../known_entities/Transgene";
+my $outfile = "$Bin/../data/known_entities/Transgene";
 open (OUT, ">$outfile") or die($!);
 
 # print "Processing trp_name...\n";
