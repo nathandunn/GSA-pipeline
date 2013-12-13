@@ -3,6 +3,7 @@
 use strict;
 use diagnostics;
 use DBI;
+use FindBin qw/$Bin/;
 use Encode qw( from_to is_utf8 );
 
 my $dbh = DBI->connect ( "dbi:Pg:dbname=testdb;host=131.215.52.76", "acedb", "") or die "Cannot connect to database!\n";
@@ -10,7 +11,7 @@ my $dbh = DBI->connect ( "dbi:Pg:dbname=testdb;host=131.215.52.76", "acedb", "")
 #my $dir = '/data1/Users/arunr/gsa/worm';
 #chdir ($dir) or die "Cannot change to $dir : $!";
 
-open (OUT, ">../known_entities/Gene");
+open (OUT, ">$Bin/../data/known_entities/Gene");
 
 # print "Processing genesequencelab...\n";
 my $result = $dbh->prepare( "SELECT * FROM gin_genesequencelab" );

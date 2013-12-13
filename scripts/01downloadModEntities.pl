@@ -1,17 +1,21 @@
 #!/usr/bin/perl -w
 use File::Slurp;
+use FindBin qw/$Bin/;
 use strict;
 
 ##########################################################################################
 # Following classes come from acedb database on spica:
 # Anatomy_name Clone Rearrangement Strain Variation
+
+# TH: This should NOT be hard-coded! I don't have access to this.
 my @args = ("scp", 
             "citpub\@spica.caltech.edu:/home/citpub/arun/wb_entities/known_entities/Variation",
-            "/home/arunr/gsa/worm/known_entities/Variation"
+	    "$Bin/../data/known_entities/Variation"
            );
 system(@args);
+
 # remove WBVar entries
-my $variation_file = "/home/arunr/gsa/worm/known_entities/Variation";
+my $variation_file = "$Bin/../data/known_entities/Variation";
 my @variations = read_file($variation_file);
 my @variation_data;
 foreach my $variation_line (@variations)
@@ -21,25 +25,26 @@ foreach my $variation_line (@variations)
     push @variation_data, $variation_line;
 }
 write_file($variation_file, @variation_data);
-#
+
+# TH: ALL OF THESE ARE HARD-CODED AND NEED TO BE FIXED.
 @args = ("scp",
-            "citpub\@spica.caltech.edu:/home/citpub/arun/wb_entities/known_entities/Clone",
-            "/home/arunr/gsa/worm/known_entities/Clone"
+	 "citpub\@spica.caltech.edu:/home/citpub/arun/wb_entities/known_entities/Clone",
+	 "$Bin/../data/known_entities/Clone"
            );
 system(@args);
 @args = ("scp",
-            "citpub\@spica.caltech.edu:/home/citpub/arun/wb_entities/known_entities/Strain",
-            "/home/arunr/gsa/worm/known_entities/Strain"
+	 "citpub\@spica.caltech.edu:/home/citpub/arun/wb_entities/known_entities/Strain",
+	 "$Bin/../data/known_entities/Strain"
            );
 system(@args);
 @args = ("scp",
-            "citpub\@spica.caltech.edu:/home/citpub/arun/wb_entities/known_entities/Rearrangement",
-            "/home/arunr/gsa/worm/known_entities/Rearrangement"
+	 "citpub\@spica.caltech.edu:/home/citpub/arun/wb_entities/known_entities/Rearrangement",
+	 "$Bin/../data/known_entities/Rearrangement"
            );
 system(@args);
 @args = ("scp",
-            "citpub\@spica.caltech.edu:/home/citpub/arun/wb_entities/known_entities/Anatomy_name",
-            "/home/arunr/gsa/worm/known_entities/Anatomy_name"
+	 "citpub\@spica.caltech.edu:/home/citpub/arun/wb_entities/known_entities/Anatomy_name",
+	 "$Bin/../data/known_entities/Anatomy_name"
            );
 system(@args);
 
@@ -51,8 +56,10 @@ system(@args);
 #        );
 #system(@args) == 0 or die("Could not scp file from tazendra\n");
 
+# Fetch information on Genes and Transgenes. Totally not portable.
 @args = ("perl", "./01_01gene.pl");
 system(@args) == 0 or die("Could not run perl script for Gene\n");
+
 @args = ("perl", "./01_02transgene.pl");
 system(@args) == 0 or die("Could not run perl script for Transgene\n");
 
@@ -61,8 +68,9 @@ system(@args) == 0 or die("Could not run perl script for Transgene\n");
 #@args = ("./update_phenotypes.pl");
 #system(@args) == 0 or die("could not run phenotype script: $!\n");
 
+# TH: HARD-CODED
 my $cvsurl = "http://caltech.wormbase.org/cvsweb/PhenOnt/PhenOnt.obo";
-my $phenotype_file = "../known_entities/Phenotype";
+my $phenotype_file = "$Bin/../data/known_entities/Phenotype";
 
 # get already existing phenotypes
 my %old_phenotypes = ();
@@ -77,6 +85,8 @@ close(IN);
 # download current phenotype data
 my $cvs_content = getwebpage($cvsurl);
 $cvs_content =~ m#<a href=\"(.+?)\" class=\"download-link\">download</a>#;
+
+# TH: Huh?
 my $current_url = "http://caltech.wormbase.org" . $1;
 my $content = getwebpage($current_url);
 my @lines = split(/\n/, $content);

@@ -3,14 +3,15 @@
 
 use strict;
 use lib "./perlmodules/";
+use FindBin qw/$Bin/;
 use TextpressoSystemTasks;
 use TextpressoGeneralTasks;
 use WormbaseLinkGlobals;
 
-my $known_entities_dir = "../known_entities/";
-my $stopwords_file = "./stopwords";
-my $exclusions_dir = "../exclusions/";
-my $outfile = "lexicon";
+my $known_entities_dir = "$Bin/../data/known_entities/";
+my $stopwords_file     = "$Bin/../data/stopwords";
+my $exclusions_dir     = "$Bin/../data/exclusions/";
+my $outfile            = "$Bin/../data/lexicon/lexicon";  # TH: This should probably be per-client/project.
 
 my $stopwords = getStopWords($stopwords_file);
 

@@ -7,102 +7,363 @@ use CGI qw/:standard *table/;
 use File::Slurp;
 use JSON qw/decode_json/;
 use Data::Dumper;
+use Log::Log4perl;
 use TextpressoGeneralTasks;
 use WormbaseLinkGlobals;
 use GeneralTasks;
 use GeneralGlobals;
 use Specs;
 
-has 'linked_xml' => (
-    is => 'rw',    
+
+# Maybe we want to include the date of the run?
+#    # Append the date
+#    my $date = `date +%Y-%m-%d`;
+#    chomp $date;
+#    return "$this/$date";
+
+# I should break this into STDERR and STDOUT logs.
+has 'log' => (
+    is => 'ro',
+    lazy_build => 1,
+);
+
+sub _build_log {
+    my $self    = shift;
+    my $stage   = $self->stage;
+    my $log_dir = $self->log_dir;   # Currently, just a master log.
+
+    # Make sure that our log dirs exist
+    # $self->_make_dir($self->log_dir);
+    # $self->_make_dir($self->log_dir . "/$release");
+    
+    # $self->_make_dir($self->log_dir . "/$release/steps");
+    # $self->_make_dir($self->log_dir . "/$release/steps/$step");
+
+    my $log_config = qq(
+
+		log4perl.rootLogger=INFO, MASTERLOG, MASTERERR, SCREEN
+
+                # MatchTRACE: lowest level for the STEPLOG
+                log4perl.filter.MatchTRACE = Log::Log4perl::Filter::LevelRange
+                log4perl.filter.MatchTRACE.LevelMin = TRACE
+                log4perl.filter.MatchTRACE.AcceptOnMatch = true
+
+                # MatchWARN: Exact match for warnings
+                log4perl.filter.MatchWARN = Log::Log4perl::Filter::LevelMatch
+                log4perl.filter.MatchWARN.LevelToMatch = WARN
+                log4perl.filter.MatchWARN.AcceptOnMatch = true
+
+                # MatchERROR: ERROR and UP
+                log4perl.filter.MatchERROR = Log::Log4perl::Filter::LevelRange
+                log4perl.filter.MatchERROR.LevelMin = ERROR
+                log4perl.filter.MatchERROR.AcceptOnMatch = true
+
+                # MatchINFO: INFO and UP. For SCREEN.
+                log4perl.filter.MatchINFO = Log::Log4perl::Filter::LevelRange
+                log4perl.filter.MatchINFO.LevelMin = INFO
+                log4perl.filter.MatchINFO.AcceptOnMatch = true
+
+                # The SCREEN
+                log4perl.appender.SCREEN           = Log::Log4perl::Appender::Screen
+                log4perl.appender.SCREEN.mode      = append
+                log4perl.appender.SCREEN.layout    = Log::Log4perl::Layout::PatternLayout
+		#log4perl.appender.SCREEN.layout.ConversionPattern=[%d %r]%K%F %L %c − %m%n
+		log4perl.appender.SCREEN.layout.ConversionPattern=[%d %p]%K%m %n
+#		log4perl.appender.Screen.stderr  = 0
+                log4perl.appender.SCREEN.Filter   = MatchINFO
+         
+                # The MASTERLOG: INFO, WARN, ERROR, FATAL
+		log4perl.appender.MASTERLOG=Log::Log4perl::Appender::File
+		log4perl.appender.MASTERLOG.filename=$log_dir/master.log
+		log4perl.appender.MASTERLOG.mode=append
+		log4perl.appender.MASTERLOG.layout = Log::Log4perl::Layout::PatternLayout
+		log4perl.appender.MASTERLOG.layout.ConversionPattern=[%d %p]%K%m (%M [%L])%n
+                log4perl.appender.MASTERLOG.Filter   = MatchINFO
+
+
+                # The MASTERERR: ERROR, FATAL
+		log4perl.appender.MASTERERR=Log::Log4perl::Appender::File
+		log4perl.appender.MASTERERR.filename=$log_dir/master.err
+		log4perl.appender.MASTERERR.mode=append
+		log4perl.appender.MASTERERR.layout = Log::Log4perl::Layout::PatternLayout
+		log4perl.appender.MASTERERR.layout.ConversionPattern=[%d %p]%K%m (%M [%L])%n
+                log4perl.appender.MASTERERR.Filter   = MatchERROR
+ 		);
+
+#    my $log_config = qq(
+#
+#		log4perl.rootLogger=INFO, MASTERLOG, MASTERERR, STEPLOG, STEPERR, SCREEN
+#
+#                # MatchTRACE: lowest level for the STEPLOG
+#                log4perl.filter.MatchTRACE = Log::Log4perl::Filter::LevelRange
+#                log4perl.filter.MatchTRACE.LevelMin = TRACE
+#                log4perl.filter.MatchTRACE.AcceptOnMatch = true
+#
+#                # MatchWARN: Exact match for warnings
+#                log4perl.filter.MatchWARN = Log::Log4perl::Filter::LevelMatch
+#                log4perl.filter.MatchWARN.LevelToMatch = WARN
+#                log4perl.filter.MatchWARN.AcceptOnMatch = true
+#
+#                # MatchERROR: ERROR and UP
+#                log4perl.filter.MatchERROR = Log::Log4perl::Filter::LevelRange
+#                log4perl.filter.MatchERROR.LevelMin = ERROR
+#                log4perl.filter.MatchERROR.AcceptOnMatch = true
+#
+#                # MatchINFO: INFO and UP. For SCREEN.
+#                log4perl.filter.MatchINFO = Log::Log4perl::Filter::LevelRange
+#                log4perl.filter.MatchINFO.LevelMin = INFO
+#                log4perl.filter.MatchINFO.AcceptOnMatch = true
+#
+#                # The SCREEN
+#                log4perl.appender.SCREEN           = Log::Log4perl::Appender::Screen
+#                log4perl.appender.SCREEN.mode      = append
+#                log4perl.appender.SCREEN.layout    = Log::Log4perl::Layout::PatternLayout
+#		#log4perl.appender.SCREEN.layout.ConversionPattern=[%d %r]%K%F %L %c − %m%n
+#		log4perl.appender.SCREEN.layout.ConversionPattern=[%d %p]%K%m %n
+##		log4perl.appender.Screen.stderr  = 0
+#                log4perl.appender.SCREEN.Filter   = MatchINFO
+#         
+#                # The MASTERLOG: INFO, WARN, ERROR, FATAL
+#		log4perl.appender.MASTERLOG=Log::Log4perl::Appender::File
+#		log4perl.appender.MASTERLOG.filename=$log_dir/$release/master.log
+#		log4perl.appender.MASTERLOG.mode=append
+#		log4perl.appender.MASTERLOG.layout = Log::Log4perl::Layout::PatternLayout
+#		log4perl.appender.MASTERLOG.layout.ConversionPattern=[%d %p]%K%m (%M [%L])%n
+#                log4perl.appender.MASTERLOG.Filter   = MatchINFO
+#
+#
+#                # The MASTERERR: ERROR, FATAL
+#		log4perl.appender.MASTERERR=Log::Log4perl::Appender::File
+#		log4perl.appender.MASTERERR.filename=$log_dir/$release/master.err
+#		log4perl.appender.MASTERERR.mode=append
+#		log4perl.appender.MASTERERR.layout = Log::Log4perl::Layout::PatternLayout
+#		log4perl.appender.MASTERERR.layout.ConversionPattern=[%d %p]%K%m (%M [%L])%n
+#                log4perl.appender.MASTERERR.Filter   = MatchERROR
+#
+#                # The STEPLOG: TRACE to get everything.
+#		log4perl.appender.STEPLOG=Log::Log4perl::Appender::File
+#		log4perl.appender.STEPLOG.filename=$log_dir/$release/steps/$step/step.log
+#		log4perl.appender.STEPLOG.mode=append
+#		log4perl.appender.STEPLOG.layout = Log::Log4perl::Layout::PatternLayout
+#		#log4perl.appender.STEPLOG.layout.ConversionPattern=[%d %p]%K%l − %r %m%n
+#		log4perl.appender.STEPLOG.layout.ConversionPattern=[%d %p]%K%m (%M [%L])%n
+#		#log4perl.appender.STEPLOG.layout.ConversionPattern=[%d %p]%K %n	       
+#                log4perl.appender.STEPLOG.Filter   = MatchTRACE
+#
+#                # The STEPERR: ERROR and up
+#		log4perl.appender.STEPERR=Log::Log4perl::Appender::File
+#		log4perl.appender.STEPERR.filename=$log_dir/$release/steps/$step/step.err
+#		log4perl.appender.STEPERR.mode=append
+#		log4perl.appender.STEPERR.layout = Log::Log4perl::Layout::PatternLayout
+#		#log4perl.appender.STEPERR.layout.ConversionPattern=[%d %p]%K%l − %r %m%n
+#		log4perl.appender.STEPERR.layout.ConversionPattern=[%d %p]%K%m (%M [%L])%n
+#		#log4perl.appender.STEPERR.layout.ConversionPattern=[%d %p]%K %n	       
+#                log4perl.appender.STEPERR.Filter   = MatchERROR
+#		);
+    
+    Log::Log4perl::Layout::PatternLayout::add_global_cspec('K',
+							       sub {
+								   
+								   my ($layout, $message, $category, $priority, $caller_level) = @_;
+								   # FATAL, ERROR, WARN, INFO, DEBUG, TRACE
+								   return "    "  if $priority eq 'DEBUG';
+								   return "    "  if $priority eq 'INFO';
+								   return "  "  if $priority eq 'WARN';  # potential errors
+								   return " !  "  if $priority eq 'ERROR'; # errors
+								   return " !  "  if $priority eq 'FATAL';  # fatal errors
+								   return "    ";
+							   });
+    
+    Log::Log4perl::init(\$log_config) or die "Couldn't create the Log::Log4Perl object";
+        
+    my $logger = Log::Log4perl->get_logger('rootLogger');
+    return $logger;	
+}
+
+
+# Logging options
+has 'log_dir' => (
+    is => 'ro',
+    lazy_build => 1,
     );
+
+sub _build_log_dir {
+    my $self   = shift;
+    my $directory = $self->output_root;
+    return $directory;
+}
+
+
 
 has 'stage' => (
     is => 'rw',
     );
 
-has 'output-dir' => (
-    is => 'rw',    
-    lazy_build => 1,
-    );
-
-# TODO: once directory structure is rearranged.
-sub _build_output {
-    my $self = shift;
-    my $this = shift;  # The base output directory
-    # Append the date
-    my $date = `date +%Y-%m-%d`;
-    chomp $date;
-    return "$this/$date";
-}
-
-has 'entity_reports_directory' => (
-    is => 'rw',    
-    lazy_build => 1,
-    );
-
-sub _build_entity_reports_directory {
-    my $self = shift;
-    my $path = "$Bin/../entity_link_tables";
-    mkdir($path,0775) or warn "Couldn't mkdir $path: $!";
-    return $path;
-}
-
-# was: linkedxmldir
-#has 'xml_directory' => (
-#    is => 'rw',    
-#    lazy_build => 1,
-#    );
-
-#sub _build_xml_directory {
-#    my $self = shift;
-#    my $path = $self->output . "/xml";
-#    mkdir($path,0775) or die "Couldn't mkdir $path";
-#    return $path;
-#}
-
-=pod
-
-# xml_file is like gen115485fin_WB.XML
-has 'xml_filename' => (
+# Sometimes we are passed a file;
+# Other times we need the root container.
+# This is the input file (plus full path),
+# an anomaly of the pipeline interface.
+has 'input_file' => (
     is => 'rw',
     lazy_build => 1,
     );
 
-# We may need to construct an suitable XML file
-# if we are provided with an HTML file.
-sub _build_xml_filename {
+
+#################################################
+#
+#    (Output) directories
+#
+#    Created dynamically based on the filename
+#    from incoming_xml/
+#
+#################################################
+
+# This is the top-level output directory.
+# The path is:
+# output/CLIENT/ID/
+# with directories therein for firstpass, qaqc, etc
+has 'output_root' => (
+    is => 'rw',    
+    lazy_build => 1,
+    );
+
+sub _build_output_root {
     my $self = shift;
-    my $html_filename = $self->html_filename;
-    (my $xml_filename = $html_filename) =~ s/\.html/\.XML/i;
-    return $xml_filename;
+
+    my $output = join("/","$Bin/../output",$self->client,$self->file_id);
+    unless (-e $output) {
+	system("mkdir -p $output") 
+	    or $self->log->warn("Couldn't create the top-level output directory at $output");
+    }
+    return $output;
 }
 
-=cut
+# An absolute path to the directory of the current stage 
+#  (stage is a symbolic name passed to the constructor)
+# output/CLIENT/ID/STAGE
+has 'stage_directory' => (
+    is => 'rw',
+    lazy_build => 1,
+    );
 
-# We may wish to pass IN an xml file name.
-#has 'xml_filepath' => (
-#    is => 'rw',
-#    lazy_build => 1,
-#    );
-#
-#sub _build_xml_filepath {
-#    my $self = shift;
-#    return join('/',$self->xml_directory,$self->xml_filename);
-#}
+sub _build_stage_directory {
+    my $self = shift;
+    my $stage = $self->stage;
+    my $dir = join("/",$self->output_root,$stage);
+    unless (-e $dir) {
+	system("mkdir -p $dir") or $self->log->warn("Couldn't create $dir: $!");
+    }
+    return $dir;
+}
 
-#has 'gsa_id' => (
-#    is => 'rw',
-#    lazy_build => 1,
-#    );
-#
-#sub _build_gsa_id {
-#    my $self = shift;
-#    my $filename = $self->xml_filename;
-#    $filename =~ /(\d+)/; # this will be the GSA ID
-#    my $id = $1;
-#    return $id;
-#}
+# Client is extracted from the input file.
+# It is expected to be of the format:
+# [CLIENT]-[ID].xml
+has 'client' => (
+    is => 'rw',
+    lazy_build => 1,
+    );
+
+sub _build_client {
+    my $self = shift;
+    my $file = $self->input_file;
+    
+    # Get the filename from the full path.
+    my @e = split(/\//, $file);
+    my $filename = pop @e;
+    
+    # Get the base identifier.
+    $filename =~ /(.*)\-.*/;
+    my $client = $1;
+    return $client; 
+}
+
+
+# Filename base is *just* the file name without suffix.
+# It is used to create suitable paths and files.
+# It is expected that the filename base is all digits.
+has 'filename' => (
+    is => 'rw',
+    lazy_build => 1,
+    );
+
+sub _build_filename {
+    my $self = shift;
+    my $file = $self->input_file;
+    
+    # Get the filename from the full path.
+    my @e = split(/\//, $file);
+    my $filename = pop @e;
+    
+    # Get the filename less suffix (CLIENT-ID)
+    $filename =~ /(.*)\./;
+    return $1;    
+}
+
+
+# Filename base is *just* the file name without suffix.
+# It is used to create suitable paths and files.
+# It is expected that the filename base is all digits.
+has 'file_id' => (
+    is => 'rw',
+    lazy_build => 1,
+    );
+
+sub _build_file_id {
+    my $self = shift;
+    my $file = $self->input_file;
+    
+    # Get the filename from the full path.
+    my @e = split(/\//, $file);
+    my $filename = pop @e;
+    
+    # Get the base identifier.
+    $filename =~ /(\d+)/;
+    return $1;
+}
+
+
+has 'log_file' => (
+    is => 'rw',
+    lazy_build => 1,
+    );
+
+sub _build_log_file {
+    my $self = shift;
+    
+    my $stage = $self->stage;
+    my $log_file = join('/',$self->stage_directory,$self->filename . '.log');
+    if (-e $log_file) {
+	die "log file $log_file already exists. Won't run again!\n";
+    }
+    return $log_file;
+}
+
+has 'report_file' => (
+    is => 'rw',
+    lazy_build => 1,
+    );
+
+sub _build_report_file {
+    my $self = shift;
+    return $self->filename . '-report.html';
+}
+
+has 'lexicon_file' => (
+    is => 'rw',
+    lazy_build => 1,
+    );
+
+sub _build_lexicon_file {
+    my $self = shift;
+    # TH: Hard-coded. Sorry, this is lame!
+    # The Lexicon should probably be client specific.
+    my $lexicon = "$Bin/../data/lexicon/lexicon";
+    return $lexicon;
+}
+
+
+
 
 has 'linked_xml' => (
     is         => 'rw',
@@ -111,9 +372,8 @@ has 'linked_xml' => (
 
 sub _build_linked_xml {    
     my $self = shift;    
-    # Slurp up linked xml. Odd.
-#    undef($/); open (IN, "<" . $self->xml_filepath) or die $!;
-    undef($/); open (IN, "<" . $self->input_file) or die $!;
+    # TH: Slurp up linked xml and spit it out. Very odd.
+    undef($/); open (IN, "<" . $self->input_file) or $self->log->die("couldn't copy the linked xml file: $!");
     my $linked_xml = <IN>; close (IN); $/ = "\n";
     return $linked_xml;
 }
@@ -130,7 +390,7 @@ sub _build_wormbase_paper_id {
 #    $xml_filename =~ /(\d+)/;
 #    my $genetics_id = $1;
 
-    my $genetics_id = $self->filename_base;
+    my $genetics_id = $self->file_id;
 
     # This page is protected.
     my $web_page = "http://tazendra.caltech.edu/~postgres/cgi-bin/author_fp_display.cgi?afp_jfp=jfp";
@@ -154,92 +414,7 @@ sub _build_wormbase_paper_id {
     return $wbpaper_id;
 }
 
-
-# This is the input file (plus full path),
-# an anamoly of the pipeline interface.
-has 'input_file' => (
-    is => 'rw',
-    lazy_build => 1,
-    );
-
-has 'input_dir' => (
-    is => 'rw',
-    lazy_build => 1,
-    );
-
-has 'filename_base' => (
-    is => 'rw',
-    lazy_build => 1,
-    );
-
-sub _build_filename_base {
-    my $self = shift;
-    my $file = $self->input_file;
-    
-    # Get the filename from the full path.
-    my @e = split(/\//, $file);
-    my $filename = pop @e;
-    
-    # Get the base identifier.
-    $filename =~ /(\d+)/;
-    my $file_id = $1;
-    return $file_id; 
-}
-
-#has 'html_filename' => (
-#    is => 'rw',
-#    lazy_build => 1,   
-#    );
-#
-#sub _build_html_filename {
-#    my $self = shift;
-#    my $html_filepath = $self->html_filepath;
-#    my @e = split(/\//, $html_filepath);
-#    my $filename = pop @e;
-#    return $filename;
-#}    
-#
-
-=pod
-
-has 'html_filepath' => (
-    is => 'rw',
-    lazy_build => 1,
-    );
-
-sub _build_html_filepath {
-    my $self = shift;
-    my $path = "$Bin/../html";
-    return $path;
-}
-
-=cut
-
-has 'stage' => (
-    is => 'rw',
-    );
-
-has 'log_file' => (
-    is => 'rw',
-    lazy_build => 1,
-    );
-
-sub _build_log_file {
-    my $self = shift;
-#    my $html_filename = $self->html_filename;
-#    $html_filename =~ /(\d+)/;
-#    my $file_id = $1;
-#    my $file_id = $self->filename_base;
-    
-    my $stage = $self->stage;
-    my $log_file = $Bin . "/../logs/" . $self->filename_base . "-$stage.log";
-    if (-e $log_file) {
-	die "log file $log_file already exists. Won't run again!\n";
-    }
-    return $log_file;
-}
-
-
+# Uh, this becomes global so headers remain set?
 has 'my_user_agent' => (
     is => 'rw',
     lazy_build => 1,
@@ -251,7 +426,6 @@ sub _build_my_user_agent {
     $ua->agent("GSA Markup Pipeline/1.0");
     return $ua;
 }
-
 
 has 'email_sender' => (
     is => 'ro',
@@ -277,7 +451,6 @@ sub _build_email_receivers {
     push @emails,$self->email_sender;
     return @emails;
 }
-
 
 has 'email_final_receivers' => (
     is => 'ro',
@@ -308,9 +481,9 @@ sub findAndLinkObjects {
     my ($lexicon,$sorted_entries) = $self->loadLexicon;
     my $wbpaper_id                = $self->wormbase_paper_id; 
 #    my $gsa_id                    = $self->gsa_id;
-    my $gsa_id = $self->filename_base;
+    my $gsa_id = $self->file_id;
    
-    print "Linking objects in $gsa_id...\n";
+    $self->log->info("Linking objects in $gsa_id");
     
     my $linked_xml = $xml;
     
@@ -353,18 +526,18 @@ sub findAndLinkObjects {
 			next if ($linked_xml !~ /\b\Q$entity_name\E\b/);
 		    }
 		    
-		    print "$class \'$entity_name\'\n"; 
+		    $self->log->info("... found $class '$entity_name'");
 		    
 		    if ( $class eq "Gene" || $class eq "Protein" ) {
 			$url = "http://www.wormbase.org/db/get?name=$entity_name;class=Gene";
 			
 			# hide matched entity to avoid future sub-string matches
 			# Hidden entities are replaced with originals once matching is done.
-			$linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
+			$linked_xml = $self->link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
 			
 			# if there is a 'p' after gene name, link it to the gene
 #                $entity_name .= 'p';
-#                $linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
+#                $linked_xml = $self->link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
 		    } 
 		    
 		    elsif (    $class eq "Strain"
@@ -375,19 +548,19 @@ sub findAndLinkObjects {
 #                    || $class eq "Anatomy_term"
 #                    || $class eq "Anatomy_name"
 			) {
-			$linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
+			$linked_xml = $self->link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
 		    }
 		    
 		    elsif ($class eq "Variation") {
-			my $allele_root = removeAlleleSuffix($entity_name);
+			my $allele_root = $self->removeAlleleSuffix($entity_name);
 			$url = "http://www.wormbase.org/db/get?name=$allele_root;class=$class";
-			$linked_xml = link_variation_in_xml($linked_xml, $entity_name, $allele_root, $url, \%orig);
+			$linked_xml = $self->link_variation_in_xml($linked_xml, $entity_name, $allele_root, $url, \%orig);
 		    }
 		    
 		    elsif ($class eq "Phenotype") {
 			my $phenotype_id = $lexicon->{$entity_name}{$class}; 
 			$url = "http://www.wormbase.org/db/get?name=$phenotype_id;class=$class";
-			$linked_xml = link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
+			$linked_xml = $self->link_entity_in_xml($linked_xml, $entity_name, $url, \%orig);
 		    }
 		}
 	    }
@@ -398,12 +571,12 @@ sub findAndLinkObjects {
 	    if ($tok_txt =~ /($entity_name)/i) {
 		for my $class (keys %{$lexicon->{$entity_name}}) { # only Variation here.
 		    
-		    print "$class \'$entity_name\' (special case for Variation)\n";
+		    $self->log->info("... $class \'$entity_name\' (special case for Variation)");
 		    
-		    my $allele_root = removeAlleleSuffix($entity_name);
+		    my $allele_root = $self->removeAlleleSuffix($entity_name);
 		    my $url = "http://www.wormbase.org/db/get?name=$allele_root;class=Variation";
 		    
-		    $linked_xml = link_variation_in_xml($linked_xml, $entity_name, $allele_root, $url, \%orig);
+		    $linked_xml = $self->link_variation_in_xml($linked_xml, $entity_name, $allele_root, $url, \%orig);
 		}
 	    }
 	}
@@ -411,18 +584,18 @@ sub findAndLinkObjects {
 	$tok_txt =~ s/\Q$entity_name\E/ /g;
     }
     
-    $linked_xml = linkSpecialCasesUsingPatternMatch($linked_xml, $lexicon, \%orig);
+    $linked_xml = $self->linkSpecialCasesUsingPatternMatch($linked_xml, $lexicon, \%orig);
     
     $linked_xml = GeneralTasks::replace_hidden_entities($linked_xml, \%orig);
     
 # upon Karen's request from 04/10/12 don't do any author linking for now.
 #    $linked_xml = linkAuthorNames($linked_xml, $wbpaper_id, $xml_format);
     
-    $linked_xml = removeUnwantedLinks($linked_xml, $xml_format);
+    $linked_xml = $self->removeUnwantedLinks($linked_xml, $xml_format);
     
-    $linked_xml = escape_urls( $linked_xml );
+    $linked_xml = $self->escape_urls( $linked_xml );
     
-    die "FATAL ERROR: XML text changed during linking!\n"
+    $self->log->die("FATAL ERROR: XML text changed during linking!")
         if ( ! original_txt_is_preserved($xml, $linked_xml, $gsa_id) );
     
     $linked_xml = GeneralTasks::highlight_text( $linked_xml );
@@ -430,26 +603,28 @@ sub findAndLinkObjects {
     return $linked_xml;
 }
 
-sub getEntityClass {
-    my $link = shift;
-
-    if ( ($link =~ /(Gene)/) || ($link =~ /(Strain)/) || ($link =~ /(Clone)/) || ($link =~ /(Transgene)/) ||
-         ($link =~ /(Rearrangement)/) || ($link =~ /(Sequence)/) || ($link =~ /(Phenotype)/) ) {
-        return $1;
-    } elsif ($link =~ /Variation/i) {
-        return "Variation";
-#    } elsif ($link =~ /anatomy/i) {
-#        return "Anatomy";
-    } elsif ($link =~ /person/i) {
-        return "Person";
-    } elsif ($link =~ /GO\_term/i) {
-        return "GO";
-    }
-
-    die "died: The link $link does not have a valid entity class\n";
-}
+# Deprecated?
+#sub getEntityClass {
+#    my $link = shift;
+#
+#    if ( ($link =~ /(Gene)/) || ($link =~ /(Strain)/) || ($link =~ /(Clone)/) || ($link =~ /(Transgene)/) ||
+#         ($link =~ /(Rearrangement)/) || ($link =~ /(Sequence)/) || ($link =~ /(Phenotype)/) ) {
+#        return $1;
+#    } elsif ($link =~ /Variation/i) {
+#        return "Variation";
+##    } elsif ($link =~ /anatomy/i) {
+##        return "Anatomy";
+#    } elsif ($link =~ /person/i) {
+#        return "Person";
+#    } elsif ($link =~ /GO\_term/i) {
+#        return "GO";
+#    }
+#
+#    die "died: The link $link does not have a valid entity class\n";
+#}
 
 sub link_entity_in_xml {
+    my $self     = shift;
     my $xml      = shift;
     my $entity   = shift;
     my $url      = shift;
@@ -478,7 +653,7 @@ sub link_entity_in_xml {
                   . "<a href=\"javascript:removeLinkAfterConfirm('$hidden_entity-$jsid')\">"
                   . "<sup><img src=\"/gsa/img/minus.png\"/></sup>"
                   . "</a>";
-        print "link_entity_in_xml: $entity\n";
+        $self->log->debug("   link_entity_in_xml: $entity");
 #        print "before: $w_before\n";
 #        print "after:  $w_after\n";
 
@@ -524,6 +699,7 @@ sub link_entity_in_xml {
 
 
 sub link_variation_in_xml {
+    my $self        = shift;
     my $xml         = shift;
     my $entity      = shift;
     my $name_in_url = shift;
@@ -584,6 +760,7 @@ sub link_variation_in_xml {
 
 
 sub escape_urls {
+    my $self = shift;
     my $xml = shift;
 
     use URI::Escape;
@@ -716,6 +893,7 @@ sub linkAuthorNamesFlatXmlOld {
 #}
 
 sub removeAlleleSuffix {
+    my $self = shift;
     my $entity_name = shift;
     
     my $root = $entity_name;
@@ -729,18 +907,22 @@ sub removeAlleleSuffix {
 }
 
 sub linkSpecialCasesUsingPatternMatch {
-    print "\n** Linking special cases **\n";
+    my $self = shift;
+    $self->log->info("** Linking special cases **");
     my $xml = shift;
     my $lexicon_ref = shift;
     my $orig_ref = shift;
     
-    $xml = linkSpecialVariationsUsingPatternMatch($xml, $lexicon_ref, $orig_ref);
-    $xml = linkSpecialGenesUsingPatternMatch($xml, $lexicon_ref, $orig_ref);
+    $xml = $self->linkSpecialVariationsUsingPatternMatch($xml, $lexicon_ref, $orig_ref);
+    $xml = $self->linkSpecialGenesUsingPatternMatch($xml, $lexicon_ref, $orig_ref);
     return $xml;
 }
 
 
 sub linkSpecialGenesUsingPatternMatch {
+    my $self        = shift;
+
+    $self->log->info(" ** Linking special genes using pattern match **");
     my $xml         = shift;
     my $lexicon_ref = shift;
     my $orig_ref    = shift;
@@ -761,11 +943,11 @@ sub linkSpecialGenesUsingPatternMatch {
 
         my $url = "http://www.wormbase.org/db/get?name=$gene;class=Gene";
         #$xml =~ s/\b($gene$suff)\b/\<a href=\"$url\"\>$1\<\/a\>/g;
-        $xml = link_entity_in_xml( $xml, 
-                                   $gene . $suff,
-                                   $url,
-                                   $orig_ref
-                                 );
+        $xml = $self->link_entity_in_xml( $xml, 
+					  $gene . $suff,
+					  $url,
+					  $orig_ref
+	    );
     }
 
     # link double mutant genes with no delimiters. eg: osm-9ocr-2
@@ -783,7 +965,7 @@ sub linkSpecialGenesUsingPatternMatch {
         }
 
         if ($url1 && $url2) {
-            print "Linking $gene1$gene2\n";
+            $self->log->info("   linking $gene1$gene2");
             $xml =~ s/\:\:/DOUBLECOLON/g;
             my $hidden_entity = GeneralTasks::get_hidden_entity( $gene1, $orig_ref );
             (my $hidden_url = $url1) =~ s/\Q$gene1\E/$hidden_entity/;
@@ -817,7 +999,7 @@ sub linkSpecialGenesUsingPatternMatch {
              $xml =~s/DOUBLECOLON/\:\:/g;
         } 
         elsif ($url1) {
-            print "Linking $gene1\n";
+	    $self->log->info("  linking $gene1");
             $xml =~ s/\:\:/DOUBLECOLON/g;
             my $hidden_entity = GeneralTasks::get_hidden_entity( $gene1, $orig_ref );
             (my $hidden_url = $url1) =~ s/\Q$gene1\E/$hidden_entity/;
@@ -836,7 +1018,7 @@ sub linkSpecialGenesUsingPatternMatch {
            $xml =~s/DOUBLECOLON/\:\:/g;
         } 
         elsif ($url2) { 
-            print "Linking $gene2\n";
+            $self->log->info("   linking $gene2");
             $xml =~ s/\:\:/DOUBLECOLON/g;
             my $hidden_entity = GeneralTasks::get_hidden_entity( $gene2, $orig_ref );
             (my $hidden_url = $url2) =~ s/\Q$gene2\E/$hidden_entity/;
@@ -869,25 +1051,25 @@ sub linkSpecialGenesUsingPatternMatch {
 
         my $first_gene = $orig_ref->{ $hidden_first_gene };
 
-        print "Matched full expression = $full_expression\n";
-        print "Linked first part       = $linked_first_part\n";
-        print "first gene              = $first_gene\n";
-        print "second genenumber       = $second_gene_number\n";
-        
-        (my $gene_prefix = $first_gene) =~ s/\d+//;
+        $self->log->info("  Matched full expression = $full_expression");
+        $self->log->info("  Linked first part       = $linked_first_part");
+        $self->log->info("  first gene              = $first_gene");
+	$self->log->info("  second genenumber       = $second_gene_number");
+	
+	(my $gene_prefix = $first_gene) =~ s/\d+//;
         my $second_gene = $gene_prefix . $second_gene_number;
-        print "Second gene             = $second_gene\n";
+        $self->log->info("  Second gene             = $second_gene");
         my $new_url = "http://www.wormbase.org/db/get?name=$second_gene;class=Gene";
         
         if ($hyphen) {
-            print "Linking \'$hyphen$second_gene_number\' in $full_expression to $new_url\n";
+            $self->log->info("  Linking \'$hyphen$second_gene_number\' in $full_expression to $new_url");
             $xmlcopy =~ s{\Q$full_expression\E}
                         {$linked_first_part$separator<a href="$new_url">$hyphen$second_gene_number</a>};
         } else {
             #open (OUT, ">temp");
             #print OUT "$xml";
             #close (OUT);
-            print "Linking \'$second_gene_number\' in $full_expression to $new_url\n";
+            $self->log->info("   Linking \'$second_gene_number\' in $full_expression to $new_url");
             $xmlcopy =~ s{\Q$full_expression\E}
                          {$linked_first_part$separator<a href="$new_url">$second_gene_number</a>};
             #open (OUT, ">temp2");
@@ -902,6 +1084,7 @@ sub linkSpecialGenesUsingPatternMatch {
 }
 
 sub linkSpecialVariationsUsingPatternMatch {
+    my $self = shift;
     # cis double mutant case (like zu405te33)
     my $xml = shift;
     my $lexicon_ref = shift;
@@ -918,7 +1101,7 @@ sub linkSpecialVariationsUsingPatternMatch {
             $already_linked{$var1}{$var2} = 1;
         }
              
-        print "variation (caught with pattern match): $var1$var2\n";
+        $self->log->info("  variation (caught with pattern match): $var1$var2");
         
         my $url1;
         my $url2;
@@ -928,7 +1111,7 @@ sub linkSpecialVariationsUsingPatternMatch {
             if ( defined($lexicon_ref->{$var2}{"Variation"}) );
 
         if ($url1 && $url2) {
-            print "Linking $var1$var2\n";
+            $self->log->info("  Linking $var1$var2");
             
             my $hidden_entity = GeneralTasks::get_hidden_entity( $var1, $orig_ref );
             (my $hidden_url = $url1) =~ s/\Q$var1\E/$hidden_entity/;
@@ -955,7 +1138,7 @@ sub linkSpecialVariationsUsingPatternMatch {
             }
         } 
         elsif ($url1) {
-            print "Linking $var1\n";
+            $self->log->info("  Linking $var1");
             my $hidden_entity = GeneralTasks::get_hidden_entity( $var1, $orig_ref );
             (my $hidden_url = $url1) =~ s/\Q$var1\E/$hidden_entity/;
             my $jsid = 1;
@@ -969,7 +1152,7 @@ sub linkSpecialVariationsUsingPatternMatch {
             }
         } 
         elsif ($url2) {
-            print "Linking $var2\n";
+            $self->log->info("  Linking $var2");
             my $hidden_entity = GeneralTasks::get_hidden_entity( $var2, $orig_ref );
             (my $hidden_url = $url2) =~ s/\Q$var2\E/$hidden_entity/;
             my $jsid = 1;
@@ -1013,6 +1196,7 @@ sub linkVariationUsingPatternMatch {
 }
 
 sub removeUnwantedLinks {
+    my $self = shift;
     my $xml = shift;
     my $xml_format = shift;
     
@@ -1131,9 +1315,10 @@ sub loadLexicon {
     my $sorted_entries = [];
     
     my %classes = ();
-    my $file = "$Bin/../lexicon/lexicon";
-    open (IN, "<$file") or die (qw/Died: no lexicon input file named "lexicon" found in $_\n/);
-    print "\nLoading lexicon...\n";
+    my $file = $self->lexicon_file;
+    open (IN, "<$file") or $self->log->die("Couldn't open the lexicon file at $file");
+ 
+   $self->log->info("Loading lexicon...");
     while (my $lexicon_line = <IN>) {
         chomp($lexicon_line);
         my $entity_name;
@@ -1153,10 +1338,13 @@ sub loadLexicon {
     }
     close (IN);
     
-    print "done.\n";
-    print "Size of lexicon = " . scalar(keys %$lexicon) . "\n\n";
+    $self->log->info("     Size of lexicon = " . scalar(keys %$lexicon));
     return ($lexicon,$sorted_entries);
 }
+
+
+# Not converted to OO
+
 
 sub writeOutput {
     my $infile = shift;
@@ -1247,11 +1435,14 @@ sub get_total_number_of_links {
 # was: formEntityTable
 sub build_entity_report {
     my ($self,$params) = @_;
-    
+   
     my $linked_xml = $self->linked_xml;
     my $wbpaper_id = $self->wormbase_paper_id;
     my $stage      = $self->stage;
     my $log_file   = $self->log_file;
+    my $id         = $self->file_id;
+    
+    $self->log->info("Building entity report for $stage: $id");
     
     # This must be supplied.
     my $xml_format = GeneralTasks::getXmlFormat($self->input_file);
@@ -1261,11 +1452,11 @@ sub build_entity_report {
     my $doi         = GeneralTasks::getDoi($linked_xml, $xml_format);
     my $genetics_id = GeneralTasks::getGeneticsId($linked_xml, $xml_format);
 
-    # TH: This should PROBABLY just go to the same directory as the source.
-    #     but be called something like filename_base.entity_report.html    
-    my $outfile    = join('/',$self->entity_reports_directory,$self->filename_base . "-$stage.html");
+    # TH: These previously went to entity_reports or entity_link_tables.
+    #     Now, they go to output/CLIENT/ID/STAGE/ID-report.html
+    my $outfile = join('/',$self->stage_directory,$self->report_file);
     open (OUT, ">$outfile") or die ("Could not open $outfile for writing: $!");
-        
+    
     # Uniquify on class, entity and link    
     my %entity_url_hash = ();
     my $total_num_links = 0;
@@ -1377,11 +1568,13 @@ sub build_entity_report {
 	    $data{request_status} = $request_status;
 	    $data{response_code}  = $response_code;
 	    
-	    print STDERR join("\t",
-			      "Entity: $entity",
-			      "Class: $class",
-			      "Status: $request_status",
-			      "Response: $response_code") . "\n";
+
+	    $self->log->info(join("\t",
+				  '  ',
+				  "Entity: $entity",
+				  "Class: $class",
+				  "Status: $request_status",
+				  "Response: $response_code"));
 	    print LOG "Status: $request_status\n";
 
             # OMG
@@ -1496,6 +1689,13 @@ END
     print OUT end_table();
     print OUT end_html();
     close OUT;
+    
+    
+    # This should use an actual logging system!
+    $self->log->info("Entity table report for " 
+		     . $self->stage
+		     . " now available at:\n"       
+		     . $self->stage_directory . '/' . $self->report_file);
 }
 
 sub get_entity_class_from_link {
@@ -1518,11 +1718,12 @@ sub get_entity_class_from_link {
     } elsif ($link =~ /GO_term/i) {
         return "GO";
     }    
-    die "died: The link $link does not have a valid entity class\n";
+    $self->log->die("The link $link does not have a valid entity class");
 }
 
 
 
+# not OO
 sub getAuthorObjects {
     my $contents = shift;
 #    my $af_page = "http://tazendra.caltech.edu/~postgres/cgi-bin/journal/journal_all.cgi?action=Show+Data&type=textpresso";
@@ -1643,7 +1844,7 @@ sub getReceivers {
 }
 
 sub get_entity_class {
-    # if there are two entity classes and one of them is 'GO'
+# if there are two entity classes and one of them is 'GO'
     # return the other class
     my @classes = @_;
     
